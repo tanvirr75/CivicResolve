@@ -58,10 +58,12 @@ const register = async (req, res, next) => {
       name, email, password, role, language,
       // Citizen
       isAnonymous,
+      // Extended profile
+      phone, dob, bloodGroup, nationality, address, nid, emergencyContact,
       // WardOfficial
-      wardId, jurisdiction,
+      wardId, jurisdiction, officeAddress, contactNumber,
       // FieldWorker
-      employeeId, expertise,
+      employeeId, expertise, vehicleType, workingHours,
       // SystemAdmin
       adminLevel, accessScope,
     } = req.body;
@@ -107,12 +109,24 @@ const register = async (req, res, next) => {
       isActive: isActiveStatus,
       // Citizen
       ...(isAnonymous !== undefined && { isAnonymous }),
+      // Extended fields
+      ...(phone        && { phone }),
+      ...(dob          && { dob }),
+      ...(bloodGroup   && { bloodGroup }),
+      ...(nationality  && { nationality }),
+      ...(address      && { address }),
+      ...(nid          && { nid }),
+      ...(emergencyContact && { emergencyContact }),
       // WardOfficial
       ...(wardId       && { wardId }),
       ...(jurisdiction && { jurisdiction }),
+      ...(officeAddress && { officeAddress }),
+      ...(contactNumber && { contactNumber }),
       // FieldWorker
       ...(employeeId   && { employeeId }),
       ...(expertise    && { expertise }),
+      ...(vehicleType  && { vehicleType }),
+      ...(workingHours && { workingHours }),
       // SystemAdmin
       ...(adminLevel   && { adminLevel }),
       ...(accessScope  && { accessScope }),
@@ -229,16 +243,187 @@ const logout = async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const getFieldWorkers = async (req, res, next) => {
   try {
-    const workers = await User.find({ role: 'field_worker' }).select('_id name email active');
-    
+    const workers = await User.find({ role: 'field_worker', isActive: true })
+      .select('_id name email employeeId isActive')
+      .lean();
+
     return res.status(200).json({
       success: true,
       message: `Found ${workers.length} active field workers.`,
-      data: { workers }
+      data: { workers },
     });
   } catch (err) {
     next(err);
   }
 };
 
-module.exports = { register, login, getMe, logout, getFieldWorkers };
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Update user profile
+// @route   PUT /api/auth/profile
+// @access  Private
+// ─────────────────────────────────────────────────────────────────────────────
+const updateProfile = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    const {
+      name, phone, dob, bloodGroup, nationality, address, nid, emergencyContact,
+      wardId, jurisdiction, officeAddress, contactNumber,
+      employeeId, expertise, vehicleType, workingHours
+    } = req.body;
+
+    if (name) user.name = name;
+    if (phone !== undefined) user.phone = phone;
+    if (dob !== undefined) user.dob = dob;
+    if (bloodGroup !== undefined) user.bloodGroup = bloodGroup;
+    if (nationality !== undefined) user.nationality = nationality;
+    if (address !== undefined) user.address = address;
+    if (nid !== undefined) user.nid = nid;
+    if (emergencyContact !== undefined) user.emergencyContact = emergencyContact;
+
+    if (user.role === 'ward_official') {
+      if (wardId !== undefined) user.wardId = wardId;
+      if (jurisdiction !== undefined) user.jurisdiction = jurisdiction;
+      if (officeAddress !== undefined) user.officeAddress = officeAddress;
+      if (contactNumber !== undefined) user.contactNumber = contactNumber;
+    }
+
+    if (user.role === 'field_worker') {
+      if (employeeId !== undefined) user.employeeId = employeeId;
+      if (expertise !== undefined) user.expertise = expertise;
+      if (vehicleType !== undefined) user.vehicleType = vehicleType;
+      if (workingHours !== undefined) user.workingHours = workingHours;
+    }
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully.',
+      data: { user: user.toSafeObject() },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Get all users (paginated)
+// @route   GET /api/auth/users
+// @access  Private (system_admin only)
+// ─────────────────────────────────────────────────────────────────────────────
+const getUsers = async (req, res, next) => {
+  try {
+    const page  = Math.max(1, parseInt(req.query.page  ?? '1',  10));
+    const limit = Math.min(100, parseInt(req.query.limit ?? '50', 10));
+    const skip  = (page - 1) * limit;
+
+    const [users, total] = await Promise.all([
+      User.find({})
+        .select('-passwordHash')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      User.countDocuments({}),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: `Found ${users.length} users.`,
+      data: {
+        users,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Update a user's role
+// @route   PATCH /api/auth/users/:id/role
+// @access  Private (system_admin only)
+// ─────────────────────────────────────────────────────────────────────────────
+const updateUserRole = async (req, res, next) => {
+  try {
+    const { role } = req.body;
+    const validRoles = ['citizen', 'ward_official', 'field_worker', 'system_admin'];
+
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid role. Allowed: ${validRoles.join(', ')}`,
+        data: null,
+      });
+    }
+
+    // Prevent admin from demoting themselves
+    if (req.params.id === req.user._id.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'You cannot change your own role.',
+        data: null,
+      });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { role },
+      { new: true, select: '-passwordHash' }
+    ).lean();
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.', data: null });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Role updated to ${role}.`,
+      data: { user },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Toggle user isActive (deactivate / reactivate)
+// @route   PUT /api/auth/users/:id/deactivate
+// @access  Private (system_admin only)
+// ─────────────────────────────────────────────────────────────────────────────
+const toggleUserActive = async (req, res, next) => {
+  try {
+    if (req.params.id === req.user._id.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'You cannot deactivate your own account.',
+        data: null,
+      });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.', data: null });
+    }
+
+    user.isActive = !user.isActive;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `User ${user.isActive ? 'reactivated' : 'deactivated'} successfully.`,
+      data: { userId: user._id, isActive: user.isActive },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { register, login, getMe, logout, getFieldWorkers, updateProfile, getUsers, updateUserRole, toggleUserActive };

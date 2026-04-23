@@ -1,4 +1,5 @@
 const socketIo = require('socket.io');
+const logger   = require('../utils/logger');
 
 let io;
 
@@ -11,16 +12,16 @@ const initSocket = (server) => {
   });
 
   io.on('connection', (socket) => {
-    console.log(`[Socket.io] Core Engine connected to Client: ${socket.id}`);
+    logger.info(`[Socket.io] Client connected: ${socket.id}`);
 
     // Join a private room unique to their user ID (for RBAC target emits later)
     socket.on('joinRoom', (userId) => {
       socket.join(userId);
-      console.log(`[Socket.io] Client ${socket.id} subscribed to Private Room: ${userId}`);
+      logger.info(`[Socket.io] Client ${socket.id} joined room: ${userId}`);
     });
 
     socket.on('disconnect', () => {
-      console.log(`[Socket.io] Client disconnected: ${socket.id}`);
+      logger.info(`[Socket.io] Client disconnected: ${socket.id}`);
     });
   });
 };

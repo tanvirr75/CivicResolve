@@ -46,7 +46,7 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
           try {
             const res = await API.get('/auth/workers');
             setFieldWorkers(res.data.data.workers.map(w => ({ value: w._id, label: w.name })));
-          } catch (e) {}
+          } catch (e) { }
         };
         loadWorkers();
       }
@@ -58,7 +58,7 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
       setWorkNotes('');
     }
   }, [reportId, opened]);
-  
+
   useEffect(() => {
     if (report) setNewStatus(report.status);
   }, [report]);
@@ -68,7 +68,7 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
     setProcessingAction(true);
     try {
       const res = await API.put(`/reports/${reportId}/upvote`);
-      
+
       // Optimistic Structural Update based on Backend resolution confirmation
       const isAdded = res.data.message.includes('added');
       setReport(prev => ({
@@ -76,7 +76,7 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
         upvoteCount: res.data.data.upvoteCount,
         priorityScore: res.data.data.priorityScore,
         // Physically emulate the active color state without querying JWT ID natively
-        hasEmulatedUpvote: isAdded 
+        hasEmulatedUpvote: isAdded
       }));
 
     } catch (err) {
@@ -122,10 +122,10 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
   };
 
   return (
-    <Drawer 
-      opened={opened} 
-      onClose={onClose} 
-      position="right" 
+    <Drawer
+      opened={opened}
+      onClose={onClose}
+      position="right"
       size="md"
       padding="xl"
       title={<Text fw={900} size="lg">Incident Analysis</Text>}
@@ -133,19 +133,19 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
     >
       <Box style={{ position: 'relative', minHeight: 300 }}>
         <LoadingOverlay visible={loading} overlayProps={{ radius: 'sm', blur: 2 }} />
-        
+
         {report && (
           <Stack gap="lg">
-            
+
             {/* Header Block */}
             <Stack gap="xs">
               <Group justify="space-between" align="flex-start">
                 <Text fw={800} size="xl" style={{ flex: 1, lineHeight: 1.2 }}>{report.title}</Text>
-                
+
                 <Group gap="xs">
                   <ActionIcon variant="light" color="blue" size="lg" radius="xl" onClick={() => {
-                      const proxyUrl = `http://localhost:5000/api/share/${report._id}`;
-                      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(proxyUrl)}`, '_blank', 'width=600,height=500');
+                    const proxyUrl = `http://localhost:5000/api/share/${report._id}`;
+                    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(proxyUrl)}`, '_blank', 'width=600,height=500');
                   }}>
                     <IconBrandFacebook size={20} />
                   </ActionIcon>
@@ -153,14 +153,14 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
                     {report.status}
                   </Badge>
                 </Group>
-                
+
               </Group>
-              
+
               <Group gap="xs">
-                <Badge variant="outline" color="gray"><IconMapPin size={12} style={{marginRight: 4}} /> Ward {report.wardId}</Badge>
+                <Badge variant="outline" color="gray"><IconMapPin size={12} style={{ marginRight: 4 }} /> Ward {report.wardId}</Badge>
                 <Badge variant="light" color="indigo">{report.category}</Badge>
                 {report.priorityScore > 0 && (
-                  <Badge color="red" variant="light" leftSection={<IconFlame size={12} />}>Severity: {report.priorityScore.toFixed(1)}</Badge>
+                  <Badge color="red" variant="light" leftSection={<IconFlame size={12} />}>Severity: {report.priorityScore.toFixed(1)}/5</Badge>
                 )}
               </Group>
               <Text size="xs" c="dimmed">Submitted on {new Date(report.createdAt).toLocaleString()} by {report.submittedBy?.name || 'Anonymous'}</Text>
@@ -168,12 +168,12 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
 
             {/* Visual Evidence Module */}
             {report.images && report.images.length > 0 && (
-              <Image 
-                src={report.images[0].secure_url || report.images[0].fileUrl} 
-                radius="md" 
-                h={250} 
-                fit="cover" 
-                fallbackSrc="https://placehold.co/600x400?text=Evidence+Corrupted" 
+              <Image
+                src={report.images[0].secure_url || report.images[0].fileUrl}
+                radius="md"
+                h={250}
+                fit="cover"
+                fallbackSrc="https://placehold.co/600x400?text=Evidence+Corrupted"
                 withPlaceholder
               />
             )}
@@ -187,9 +187,9 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
                   <IconShieldCheck size={18} color="teal" />
                   <Text fw={700} c="teal.9">Official Authority Controls</Text>
                 </Group>
-                
+
                 <Stack gap="sm">
-                  <Select 
+                  <Select
                     label="Incident Resolution Status"
                     value={newStatus}
                     onChange={setNewStatus}
@@ -198,8 +198,8 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
                   />
 
                   {newStatus === 'Resolved' && report.status !== 'Resolved' && (
-                    <FileInput 
-                      label="Proof of Fix Image" 
+                    <FileInput
+                      label="Proof of Fix Image"
                       description="Photographic evidence strictly required to terminate incident."
                       placeholder="Upload photo..."
                       icon={<IconUpload size={14} />}
@@ -210,23 +210,23 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
                     />
                   )}
 
-                  <Button 
-                    color="teal" 
-                    fullWidth 
+                  <Button
+                    color="teal"
+                    fullWidth
                     loading={processingAction}
                     onClick={async () => {
                       if (newStatus === report.status) return;
                       if (newStatus === 'Resolved' && !proofImage) {
                         return notifications.show({ title: 'Validation Breach', message: 'Proof of fix is required before resolution.', color: 'red' });
                       }
-                      
+
                       setProcessingAction(true);
                       try {
                         const fd = new FormData();
                         fd.append('status', newStatus);
                         if (proofImage) fd.append('proofImage', proofImage);
-                        
-                        await API.put(`/reports/${reportId}/status`, fd, { headers: { 'Content-Type': 'multipart/form-data' }});
+
+                        await API.put(`/reports/${reportId}/status`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
                         notifications.show({ title: 'System Override Successful', message: `Marked issue as ${newStatus}. Locals notified.`, color: 'green' });
                         await fetchReportDetails();
                         setProofImage(null);
@@ -251,8 +251,8 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
                   <IconFileText size={18} color="indigo" />
                   <Text fw={700} c="indigo.9">Digital Field Operations</Text>
                 </Group>
-               <Stack gap="sm">
-                  <Select 
+                <Stack gap="sm">
+                  <Select
                     label="Assign Field Worker"
                     placeholder="Select active worker..."
                     data={fieldWorkers}
@@ -260,30 +260,30 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
                     onChange={setSelectedWorker}
                     required
                   />
-                  <Textarea 
+                  <Textarea
                     label="Dispatch Directives"
                     placeholder="e.g. Bring asphalt and traffic warning cones..."
                     value={workNotes}
                     onChange={(e) => setWorkNotes(e.currentTarget.value)}
                   />
-                  <Button 
-                    color="indigo" 
-                    fullWidth 
+                  <Button
+                    color="indigo"
+                    fullWidth
                     leftSection={<IconFileText size={16} />}
                     onClick={handleDispatchWorkOrder}
                   >
                     Deploy & Print Work Order (PDF)
                   </Button>
-               </Stack>
+                </Stack>
               </Paper>
             )}
 
             {/* Action Frame */}
             <Group grow>
-              <Button 
-                variant={report.hasEmulatedUpvote ? "filled" : "light"} 
-                color="orange" 
-                leftSection={<IconThumbUp size={16} />} 
+              <Button
+                variant={report.hasEmulatedUpvote ? "filled" : "light"}
+                color="orange"
+                leftSection={<IconThumbUp size={16} />}
                 onClick={handleToggleUpvote}
                 loading={processingAction}
               >
@@ -299,7 +299,7 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
                 <IconMessageCircle size={18} />
                 <Text fw={700}>Community Thread ({report.comments?.length || 0})</Text>
               </Group>
-              
+
               <ScrollArea h={300} type="auto" offsetScrollbars>
                 <Stack gap="md" pr="sm">
                   {report.comments && report.comments.map((cmd) => (
@@ -321,8 +321,8 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
               </ScrollArea>
 
               <Group align="flex-end">
-                <Textarea 
-                  placeholder="Contribute strictly constructive feedback..." 
+                <Textarea
+                  placeholder="Contribute strictly constructive feedback..."
                   value={commentText}
                   onChange={(e) => setCommentText(e.currentTarget.value)}
                   style={{ flex: 1 }}

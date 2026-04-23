@@ -70,4 +70,28 @@ const authorize = (...roles) => {
   };
 };
 
-module.exports = { authenticate, authorize };
+/**
+ * optionalAuthenticate — non-blocking JWT check.
+ * Attaches req.user if a valid Bearer token is present.
+ * Silently continues (does NOT reject) if no token or token is invalid.
+ * Use on public routes that need role-aware behaviour when a user is logged in.
+ *
+ * Example: GET /api/reports (public heatmap) — but auto-scopes results
+ * by wardId when called by a ward_official.
+ */
+const optionalAuthenticate = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return next();
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user    = await User.findById(decoded.id).select('-passwordHash').lean();
+    if (user && user.isActive) req.user = user;
+  } catch {
+    // Invalid / expired token — just continue as unauthenticated
+  }
+  next();
+};
+
+module.exports = { authenticate, authorize, optionalAuthenticate };

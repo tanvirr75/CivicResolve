@@ -255,13 +255,14 @@ reportSchema.pre('save', function () {
 // ── Pre-save: Recalculate priority score (FR-15) ──────────────────────────
 reportSchema.pre('save', function () {
   const upvotes  = this.upvoteCount || 0;
-  const severity = this.severity    || 0;
+  const severity = this.severity    || 1;
   const ageHours = this.createdAt
     ? Math.floor((Date.now() - this.createdAt) / (1000 * 60 * 60))
     : 0;
-  const ageBonus = Math.floor(ageHours / 24) * 5;
+  const ageBonus = Math.floor(ageHours / 24) * 0.1;
 
-  this.priorityScore = upvotes * 2 + severity * 10 + ageBonus;
+  // Formula caps at 5.0 to align with UI expectations
+  this.priorityScore = Math.min(5, severity + (upvotes * 0.2) + ageBonus);
 });
 
 // ── Plugin: pagination ─────────────────────────────────────────────────────

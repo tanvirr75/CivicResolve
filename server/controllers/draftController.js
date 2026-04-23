@@ -1,3 +1,4 @@
+const { validationResult } = require('express-validator');
 const OfflineDraft = require('../models/OfflineDraft');
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8,13 +9,23 @@ const OfflineDraft = require('../models/OfflineDraft');
 // ─────────────────────────────────────────────────────────────────────────────
 const syncDrafts = async (req, res, next) => {
   try {
+    // ── 1. Validate incoming payload ───────────────────────────────
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed.',
+        data: { errors: errors.array() },
+      });
+    }
+
     const { drafts } = req.body;
 
     if (!Array.isArray(drafts) || drafts.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'No drafts array provided for syncing.',
-        data: null
+        data: null,
       });
     }
 

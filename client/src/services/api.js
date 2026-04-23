@@ -1,13 +1,12 @@
 import axios from 'axios';
 
-// Create a globally configured Axios instance
+// ─── Axios instance ───────────────────────────────────────────────────────────
+// Falls back to '/api' so the Vite dev proxy still works without a .env entry.
 const API = axios.create({
-  // Because we configured Vite Proxy in vite.config.js, 
-  // we do NOT need to hardcode the http://localhost:5000 domain.
-  baseURL: '/api' 
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? '/api',
 });
 
-// Request Interceptor: Automatically inject the JWT token if it exists!
+// ─── Request interceptor: inject JWT ─────────────────────────────────────────
 API.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
@@ -19,15 +18,20 @@ API.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response Interceptor: Seamlessly log users out if their token expires
+// ─── Response interceptor: handle 401 ────────────────────────────────────────
+// We can't call useAuth() here (hooks are React-only), so we fire a custom
+// browser event that AuthContext listens to, then hard-redirect to /login.
+// This avoids circular imports and works outside React render trees.
 API.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && error.response.status === 401) {
-      console.warn("Unauthorized API call. Attempting flush...");
-      localStorage.removeItem('token');
-      // Forcing a hard redirect to login page protects the frontend states
-      window.location.href = '/login'; 
+    if (error.response?.status === 401) {
+      // Notify any listener (e.g. AuthContext) to clear state
+      window.dispatchEvent(new Event('auth:logout'));
+      // Hard redirect so the router cleans up completely
+      if (window.location.pathname !== '/login') {
+        window.location.replace('/login');
+      }
     }
     return Promise.reject(error);
   }

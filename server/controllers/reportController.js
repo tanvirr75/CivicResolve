@@ -1,10 +1,12 @@
 const { validationResult } = require('express-validator');
 const Report               = require('../models/Report');
+const WardBoundary         = require('../models/WardBoundary');
 const Notification         = require('../models/Notification');
 const { getIo }            = require('../services/socketService');
 const { uploadBuffer }     = require('../services/cloudinaryService');
 const { categorizeReport, estimateSeverity, detectSpam } = require('../services/aiService');
 const { resolveWard }      = require('../services/wardService');
+const logger               = require('../utils/logger');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // @desc    Create a new civic report
@@ -25,7 +27,7 @@ const createReport = async (req, res, next) => {
       });
     }
 
-    const { title, description, latitude, longitude, isAnonymous } = req.body;
+    const { title, description, latitude, longitude, isAnonymous, category: userCategory, severity: userSeverity } = req.body;
 
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);
@@ -47,7 +49,24 @@ const createReport = async (req, res, next) => {
     }
 
     // ── 4. Ward auto-routing (FR-11) ─────────────────────────────────────
-    const wardResult = await resolveWard(lat, lng);
+    let wardResult = await resolveWard(lat, lng);
+
+    // Fallback: if no boundary matched (e.g. coordinates outside all polygons),
+    // default to W-01 so the report is never "orphaned" and invisible to officials.
+    if (!wardResult) {
+      const defaultWard = await WardBoundary
+        .findOne({ wardId: 'W-01' })
+        .select('wardId name assignedOfficial')
+        .lean();
+      if (defaultWard) {
+        wardResult = {
+          wardId           : defaultWard.wardId,
+          wardName         : defaultWard.name,
+          assignedOfficial : defaultWard.assignedOfficial || null,
+        };
+        logger.warn('[Ward] No boundary matched — defaulting to W-01 fallback.');
+      }
+    }
 
     // ── 5. Image upload to Cloudinary (FR-02) ────────────────────────────
     let evidences = [];
@@ -64,6 +83,17 @@ const createReport = async (req, res, next) => {
     }
 
     // ── 6. Build & save Report document ──────────────────────────────────
+    // Priority: user-submitted category > AI category > 'Other'
+    // This ensures human judgement is never silently overwritten by the AI.
+    const finalCategory = userCategory?.trim() || aiCategory || 'Other';
+
+    // Priority: user-submitted severity (from pre-flight /api/ai/severity call)
+    // > AI severity from server-side call > default 3 (Moderate)
+    const parsedUserSeverity = userSeverity ? parseInt(userSeverity, 10) : null;
+    const finalSeverity      = (parsedUserSeverity >= 1 && parsedUserSeverity <= 5)
+      ? parsedUserSeverity
+      : (severity ?? 3);
+
     const report = await Report.create({
       title,
       description,
@@ -74,9 +104,9 @@ const createReport = async (req, res, next) => {
         type        : 'Point',
         coordinates : [lng, lat],
       },
-      category    : aiCategory,
-      aiCategory  : aiCategory,
-      severity,
+      category    : finalCategory,
+      aiCategory  : aiCategory || null,  // store raw AI result separately for audit
+      severity    : finalSeverity,
       isSpam      : false, // passed spam gate above
       submittedBy : req.user._id,
       isAnonymous : isAnonymous === 'true' || isAnonymous === true || false,
@@ -86,16 +116,39 @@ const createReport = async (req, res, next) => {
       ...(wardResult && {
         wardId     : wardResult.wardId,
         assignedTo : wardResult.assignedOfficial || undefined,
-        status     : wardResult.assignedOfficial ? 'Assigned' : 'Open',
+        status     : 'Open', // Changed from Assigned to Open
       }),
 
       // Initial status history entry
       statusHistory: [{
-        status    : wardResult?.assignedOfficial ? 'Assigned' : 'Open',
+        status    : 'Open', // Changed from Assigned to Open
         changedBy : req.user._id,
         note      : 'Report submitted',
       }],
     });
+
+    // ── Emit Notification to Ward Official (Pipeline TEST 11) ──
+    try {
+      if (wardResult?.assignedOfficial) {
+        const notifMsg = `A new report "${report.title}" has been assigned to your ward (${wardResult.wardId}).`;
+        
+        // 1. Persist notification to DB
+        const notification = await Notification.create({
+          recipient: wardResult.assignedOfficial,
+          report   : report._id,
+          message  : notifMsg,
+          type     : 'assignment',
+        });
+
+        // 2. Push real-time update
+        const io = getIo();
+        const roomId = wardResult.assignedOfficial.toString();
+        io.to(roomId).emit('newNotification', notification);
+        io.to(roomId).emit('newWardReport', { reportId: report._id, wardId: report.wardId });
+      }
+    } catch (notifErr) {
+      logger.error('[Notifications] Socket emission failed for new report:', notifErr.message);
+    }
 
     return res.status(201).json({
       success : true,
@@ -133,12 +186,31 @@ const createReport = async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const getReports = async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, status, category, wardId } = req.query;
+    const { page = 1, limit = 10, status, category, wardId, submittedBy } = req.query;
 
     const filter = { isSpam: false };
-    if (status)   filter.status   = status;
+    if (status) {
+      const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
+      filter.status = statuses.length === 1 ? statuses[0] : { $in: statuses };
+    }
     if (category) filter.category = category;
-    if (wardId)   filter.wardId   = wardId;
+
+    // ── submittedBy filter (FR-01 citizen dashboard) ─────────────────────
+    // 'me' → scope to the requesting user's own reports.
+    // Any other value is ignored for safety (prevents probing other users).
+    if (submittedBy === 'me' && req.user) {
+      filter.submittedBy = req.user._id;
+    }
+
+    // ── Ward scoping (security) ──────────────────────────────────────────
+    // If the caller is a ward_official, always restrict results to their ward.
+    // This prevents officials from reading reports outside their jurisdiction,
+    // even if they manually omit the wardId query param.
+    if (req.user?.role === 'ward_official') {
+      filter.wardId = req.user.wardId;
+    } else if (wardId) {
+      filter.wardId = wardId;
+    }
 
     const options = {
       page     : parseInt(page),
@@ -304,7 +376,7 @@ const addComment = async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const getNearbyReports = async (req, res, next) => {
   try {
-    const { lat, lng, radius = 10 } = req.query; // Default 10 meters per audit_code.md
+    const { lat, lng, radius = 30 } = req.query; // Default 30 meters per updated FR-09
 
     if (!lat || !lng) {
       return res.status(400).json({
@@ -394,21 +466,25 @@ const updateStatus = async (req, res, next) => {
     try {
       if (report.submittedBy && report.submittedBy.toString() !== req.user._id.toString()) {
         const notifMsg = `Your reported issue "${report.title}" status has been updated to "${status}".`;
-        
-        // 1. Build DB Notification History
+
+        // 1. Persist notification to DB
         const notification = await Notification.create({
           recipient: report.submittedBy,
-          report: report._id,
-          message: notifMsg,
-          type: 'status_update'
+          report   : report._id,
+          message  : notifMsg,
+          type     : 'status_update',
         });
 
-        // 2. Blast out the Real-Time live update to the private room
-        const io = getIo();
-        io.to(report.submittedBy.toString()).emit('statusUpdated', notification);
+        // 2. Push real-time update to the reporter's private Socket.io room
+        const io     = getIo();
+        const roomId = report.submittedBy.toString();
+
+        io.to(roomId).emit('statusUpdated',       notification);
+        io.to(roomId).emit('reportStatusUpdated', { reportId: report._id, status });
       }
-    } catch(err) {
-      console.error("[Notifications] Socket emission skipped or failed:", err.message);
+    } catch (notifErr) {
+      // Non-fatal — log and continue so the status update is still returned
+      logger.error('[Notifications] Socket emission failed:', notifErr.message);
     }
 
     return res.status(200).json({

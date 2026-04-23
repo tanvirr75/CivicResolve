@@ -45,6 +45,15 @@ const userSchema = new mongoose.Schema(
       type: Date,
     },
 
+    // ── Extended Profile Fields (Common) ─────────
+    dob: { type: Date },
+    nationality: { type: String, trim: true },
+    bloodGroup: { type: String, trim: true },
+    phone: { type: String, trim: true },
+    address: { type: String, trim: true },
+    nid: { type: String, trim: true },
+    emergencyContact: { type: String, trim: true },
+
     // ── Citizen-specific ─────────────────────────────
     isAnonymous: {
       type: Boolean,
@@ -60,6 +69,8 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    officeAddress: { type: String, trim: true },
+    contactNumber: { type: String, trim: true },
 
     // ── FieldWorker-specific ─────────────────────────
     employeeId: {
@@ -70,6 +81,8 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    vehicleType: { type: String, trim: true },
+    workingHours: { type: String, trim: true },
 
     // ── SystemAdmin-specific ─────────────────────────
     adminLevel: {
@@ -112,7 +125,33 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 userSchema.methods.toSafeObject = function () {
   const obj = this.toObject();
   delete obj.passwordHash;
+  obj.profileCompleteness = this.calculateProfileCompleteness();
   return obj;
+};
+
+// ── Instance method: Calculate Profile Completeness ────────────────────────
+userSchema.methods.calculateProfileCompleteness = function () {
+  const commonFields = ['name', 'email', 'phone', 'dob', 'bloodGroup', 'nationality', 'address', 'nid', 'emergencyContact'];
+  let roleFields = [];
+  
+  if (this.role === 'ward_official') {
+    roleFields = ['wardId', 'jurisdiction', 'officeAddress', 'contactNumber'];
+  } else if (this.role === 'field_worker') {
+    roleFields = ['employeeId', 'expertise', 'vehicleType', 'workingHours'];
+  } else if (this.role === 'system_admin') {
+    roleFields = ['adminLevel', 'accessScope'];
+  }
+
+  const allFields = [...commonFields, ...roleFields];
+  let filledFields = 0;
+
+  allFields.forEach(field => {
+    if (this[field] !== undefined && this[field] !== null && this[field] !== '') {
+      filledFields++;
+    }
+  });
+
+  return Math.round((filledFields / allFields.length) * 100);
 };
 
 const User = mongoose.model('User', userSchema);

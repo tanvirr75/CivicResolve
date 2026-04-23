@@ -17,7 +17,7 @@ const getShareableCard = async (req, res, next) => {
     // Sanitize string content to prevent HTML injection errors in rendering
     const safeTitle = report.title ? report.title.replace(/"/g, '&quot;') : 'CivicResolve - Urban Issue Recorded';
     const safeDesc = report.description ? report.description.replace(/"/g, '&quot;') : 'A citizen has flagged a critical urban issue for resolution.';
-    const imageUrl = report.imageUrl || 'https://res.cloudinary.com/demo/image/upload/sample.jpg';
+    const imageUrl = report.evidences?.[0]?.fileUrl || 'https://res.cloudinary.com/demo/image/upload/sample.jpg';
 
     // ── Generate the static HTML meta properties block ──
     const html = `

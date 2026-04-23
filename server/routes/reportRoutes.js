@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, query } = require('express-validator');
 const { createReport, getReports, getReportById, toggleUpvote, addComment, getNearbyReports, updateStatus } = require('../controllers/reportController');
-const { authenticate, authorize } = require('../middleware/authenticate');
+const { authenticate, authorize, optionalAuthenticate } = require('../middleware/authenticate');
 const { uploadSingle }  = require('../middleware/upload');
 
 const router = express.Router();
@@ -36,7 +36,7 @@ const createReportValidation = [
 const getReportsValidation = [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer.'),
   query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be 1–100.'),
-  query('status').optional().isIn(['Open', 'Assigned', 'In Progress', 'Resolved']),
+  query('status').optional(),
   query('category').optional().isIn(['Road', 'Waste', 'Drainage', 'Lighting', 'Water', 'Other']),
 ];
 
@@ -52,8 +52,10 @@ router.post(
   createReport
 );
 
-// GET /api/reports — public, paginated list
-router.get('/', getReportsValidation, getReports);
+// GET /api/reports — public, paginated list.
+// optionalAuthenticate: if a ward_official sends their JWT, getReports
+// auto-scopes results to their wardId. Citizens/public get all non-spam reports.
+router.get('/', optionalAuthenticate, getReportsValidation, getReports);
 
 // GET /api/reports/nearby — public, duplicate detection (MUST be before /:id route)
 router.get('/nearby', getNearbyReports);

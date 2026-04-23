@@ -1,38 +1,129 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import API from '../services/api';
 
-const AuthContext = createContext();
+// ─── Context ─────────────────────────────────────────────────────────────────
+const AuthContext = createContext(null);
 
+// ─── Helper: decode JWT payload without a library ────────────────────────────
+function decodeToken(token) {
+  try {
+    const payload = token.split('.')[1];
+    // atob handles base64; replace chars for URL-safe base64
+    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch {
+    return null;
+  }
+}
+
+// ─── Provider ────────────────────────────────────────────────────────────────
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser]       = useState(null);   // full user object from /auth/me
+  const [token, setToken]     = useState(() => localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
 
-  const fetchUser = async () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
+  // Hydrate user from the server whenever we have a token
+  const hydrateUser = useCallback(async (activeToken) => {
+    if (!activeToken) {
+      setUser(null);
       setLoading(false);
-      return; // Absolute hard abort
+      return;
     }
+
+    // Quick sanity-check: if token is already expired, drop it immediately
+    const decoded = decodeToken(activeToken);
+    if (decoded?.exp && decoded.exp * 1000 < Date.now()) {
+      localStorage.removeItem('token');
+      setToken(null);
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+
+    if (!user) setLoading(true);
+
     try {
       const res = await API.get('/auth/me');
-      setUser(res.data.data.user); // Object natively mapped with role, id, name
+      setUser(res.data.data.user); // { _id, name, email, role, wardId?, ... }
     } catch (err) {
-      console.warn("Invalid JWT Detected, wiping security token...");
+      // Token rejected by server — wipe everything
+      console.warn('[AuthContext] Token rejected — clearing session.');
       localStorage.removeItem('token');
+      setToken(null);
+      setUser(null);
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchUser();
   }, []);
 
+  // On mount and whenever token changes, re-hydrate
+  useEffect(() => {
+    hydrateUser(token);
+  }, [token, hydrateUser]);
+
+  // Listen for 401 events fired by the Axios interceptor (avoids circular import)
+  useEffect(() => {
+    const handle = () => {
+      localStorage.removeItem('token');
+      setToken(null);
+      setUser(null);
+    };
+    window.addEventListener('auth:logout', handle);
+    return () => window.removeEventListener('auth:logout', handle);
+  }, []);
+
+
+  // ── login(jwtString) ───────────────────────────────────────────────────────
+  // Call after a successful /auth/login or /auth/register response
+  const login = useCallback((jwtToken, userData = null) => {
+    localStorage.setItem('token', jwtToken);
+    setToken(jwtToken);
+    if (userData) setUser(userData);
+    // hydrateUser will run automatically via the useEffect above
+  }, []);
+
+  // ── logout() ──────────────────────────────────────────────────────────────
+  const logout = useCallback(() => {
+    localStorage.removeItem('token');
+    setToken(null);
+    setUser(null);
+  }, []);
+
+  // ── isAuthenticated() ─────────────────────────────────────────────────────
+  const isAuthenticated = useCallback(() => {
+    if (!token || !user) return false;
+    const decoded = decodeToken(token);
+    return decoded?.exp ? decoded.exp * 1000 > Date.now() : false;
+  }, [token, user]);
+
+  // ── hasRole(role | role[]) ────────────────────────────────────────────────
+  // Usage: hasRole('system_admin') or hasRole(['ward_official','system_admin'])
+  const hasRole = useCallback((roles) => {
+    if (!user?.role) return false;
+    return Array.isArray(roles) ? roles.includes(user.role) : user.role === roles;
+  }, [user]);
+
+  const value = {
+    user,
+    token,
+    loading,
+    login,
+    logout,
+    isAuthenticated,
+    hasRole,
+    // expose setUser so components like Profile can patch it without a full refetch
+    setUser,
+  };
+
   return (
-    <AuthContext.Provider value={{ user, setUser, loading }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-export const useAuth = () => useContext(AuthContext);
+// ─── Hook ─────────────────────────────────────────────────────────────────────
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>');
+  return ctx;
+};

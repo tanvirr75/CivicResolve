@@ -1,9 +1,10 @@
 const { validationResult } = require('express-validator');
 const WorkOrder = require('../models/WorkOrder');
-const Report = require('../models/Report');
-const User = require('../models/User');
-const { uploadBuffer } = require('../services/cloudinaryService');
+const Report    = require('../models/Report');
+const User      = require('../models/User');
+const { uploadBuffer }         = require('../services/cloudinaryService');
 const { generateWorkOrderPdf } = require('../services/pdfService');
+const logger                   = require('../utils/logger');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // @desc    Create a Work Order to dispatch Field Worker
@@ -129,4 +130,111 @@ const submitProofOfFix = async (req, res, next) => {
   }
 };
 
-module.exports = { createWorkOrder, submitProofOfFix };
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Get all Work Orders (with role-based filtering)
+// @route   GET /api/work-orders
+// @access  Private (field_worker, ward_official, system_admin)
+// ─────────────────────────────────────────────────────────────────────────────
+const getWorkOrders = async (req, res, next) => {
+  try {
+    const { assignedTo, status, page = 1, limit = 20 } = req.query;
+    const query = {};
+
+    // 1. Filter by assigned worker
+    // If assignedTo=me, filter by current user's ID
+    if (assignedTo === 'me') {
+      query.assignedTo = req.user._id;
+    } else if (assignedTo) {
+      query.assignedTo = assignedTo;
+    }
+
+    // 2. Filter by status
+    if (status) {
+      query.status = status;
+    }
+
+    // ── 3. Authorization check per role ────────────────────────────────────────
+    // field_worker: can only see their own orders.
+    // ward_official: scoped to work orders whose report belongs to their ward.
+    // system_admin: sees all.
+    if (req.user.role === 'field_worker') {
+      if (query.assignedTo?.toString() !== req.user._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Unauthorized. Field workers can only access their own work orders.',
+          data: null,
+        });
+      }
+    }
+
+    if (req.user.role === 'ward_official') {
+      // Find all report IDs that belong to this official's ward
+      const wardReportIds = await Report
+        .find({ wardId: req.user.wardId })
+        .select('_id')
+        .lean();
+      query.report = { $in: wardReportIds.map((r) => r._id) };
+    }
+
+    // 4. Fetch with pagination and population
+    const options = {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      sort: { createdAt: -1 },
+      populate: [
+        { path: 'report', select: 'title category description latitude longitude status' },
+        { path: 'assignedTo', select: 'name email' },
+        { path: 'assignedBy', select: 'name email' }
+      ],
+      lean: true
+    };
+
+    const result = await WorkOrder.paginate(query, options);
+
+    return res.status(200).json({
+      success: true,
+      message: `Fetched ${result.docs.length} work orders.`,
+      data: {
+        workOrders: result.docs,
+        totalItems: result.totalDocs,
+        totalPages: result.totalPages,
+        currentPage: result.page
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Get a single Work Order by ID
+// @route   GET /api/work-orders/:id
+// @access  Private (field_worker — own only; ward_official; system_admin)
+// ─────────────────────────────────────────────────────────────────────────────
+const getWorkOrderById = async (req, res, next) => {
+  try {
+    const workOrder = await WorkOrder.findById(req.params.id)
+      .populate('report',     'title category description latitude longitude location status evidences wardId')
+      .populate('assignedTo', 'name email employeeId')
+      .populate('assignedBy', 'name email')
+      .lean();
+
+    if (!workOrder) {
+      return res.status(404).json({ success: false, message: 'Work Order not found.', data: null });
+    }
+
+    // field_worker may only access their own orders
+    if (
+      req.user.role === 'field_worker' &&
+      workOrder.assignedTo?._id?.toString() !== req.user._id.toString()
+    ) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view this work order.', data: null });
+    }
+
+    return res.status(200).json({ success: true, message: 'Work order fetched.', data: { workOrder } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { createWorkOrder, submitProofOfFix, getWorkOrders, getWorkOrderById };

@@ -1,6 +1,6 @@
 const express = require('express');
 const { body } = require('express-validator');
-const { createWorkOrder, submitProofOfFix } = require('../controllers/workOrderController');
+const { createWorkOrder, submitProofOfFix, getWorkOrders, getWorkOrderById } = require('../controllers/workOrderController');
 const { authenticate, authorize } = require('../middleware/authenticate');
 const { uploadSingle } = require('../middleware/upload');
 
@@ -11,6 +11,20 @@ const createWorkOrderValidation = [
   body('assignedTo').notEmpty().withMessage('assignedTo (Field Worker ID) is required.'),
   body('notes').optional().trim(),
 ];
+
+// GET /api/work-orders — accessible to field workers (own), officials, and admins
+router.get(
+  '/',
+  authenticate,
+  getWorkOrders
+);
+
+// GET /api/work-orders/:id — single work order (field_worker own; official; admin)
+router.get(
+  '/:id',
+  authenticate,
+  getWorkOrderById
+);
 
 // POST /api/work-orders — strictly ward_official or system_admin
 router.post(

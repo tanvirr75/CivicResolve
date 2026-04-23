@@ -1,6 +1,6 @@
 const express = require('express');
 const { body }  = require('express-validator');
-const { register, login, getMe, logout, getFieldWorkers } = require('../controllers/authController');
+const { register, login, getMe, logout, getFieldWorkers, getUsers, updateUserRole, toggleUserActive } = require('../controllers/authController');
 const { authenticate, authorize } = require('../middleware/authenticate');
 
 const router = express.Router();
@@ -39,6 +39,15 @@ const registerValidation = [
     .optional()
     .isBoolean().withMessage('isAnonymous must be a boolean.'),
 
+  // Extended fields
+  body('phone').optional().trim(),
+  body('dob').optional().trim(),
+  body('bloodGroup').optional().trim(),
+  body('nationality').optional().trim(),
+  body('address').optional().trim(),
+  body('nid').optional().trim(),
+  body('emergencyContact').optional().trim(),
+
   // WardOfficial-specific
   body('wardId')
     .optional()
@@ -49,6 +58,9 @@ const registerValidation = [
     .optional()
     .trim(),
 
+  body('officeAddress').optional().trim(),
+  body('contactNumber').optional().trim(),
+
   // FieldWorker-specific
   body('employeeId')
     .optional()
@@ -58,6 +70,9 @@ const registerValidation = [
   body('expertise')
     .optional()
     .trim(),
+
+  body('vehicleType').optional().trim(),
+  body('workingHours').optional().trim(),
 
   // SystemAdmin-specific
   body('adminLevel')
@@ -96,5 +111,19 @@ router.post('/logout', authenticate, logout);
 
 // GET /api/auth/workers — explicitly protected for FR-13 dispatch
 router.get('/workers', authenticate, authorize('ward_official', 'system_admin'), getFieldWorkers);
+
+// PUT /api/auth/profile — protected
+const { updateProfile } = require('../controllers/authController');
+router.put('/profile', authenticate, updateProfile);
+
+// ── Admin-only user management ────────────────────────────────────────────────
+// GET /api/auth/users — list all users (system_admin only)
+router.get('/users', authenticate, authorize('system_admin'), getUsers);
+
+// PATCH /api/auth/users/:id/role — change a user's role (system_admin only)
+router.patch('/users/:id/role', authenticate, authorize('system_admin'), updateUserRole);
+
+// PUT /api/auth/users/:id/deactivate — toggle isActive (system_admin only)
+router.put('/users/:id/deactivate', authenticate, authorize('system_admin'), toggleUserActive);
 
 module.exports = router;

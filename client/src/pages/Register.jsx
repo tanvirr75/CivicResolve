@@ -1,124 +1,360 @@
 import React, { useState } from 'react';
-import { Grid, Box, Title, Text, TextInput, PasswordInput, Button, Anchor, Flex, Select, Checkbox, Progress, Collapse, Alert } from '@mantine/core';
+import {
+  Box,
+  Card,
+  Title,
+  Text,
+  TextInput,
+  PasswordInput,
+  Button,
+  Anchor,
+  Alert,
+  Stack,
+  Progress,
+  Group,
+  Checkbox,
+} from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconUser, IconMail, IconLock, IconInfoCircle } from '@tabler/icons-react';
+import {
+  IconUser,
+  IconMail,
+  IconLock,
+  IconAlertCircle,
+  IconArrowRight,
+  IconShieldCheck,
+} from '@tabler/icons-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import API from '../services/api';
-import authImage from '../assets/auth_illustration.png';
+import { useAuth } from '../context/AuthContext';
+import AuthSplitScreen from '../layouts/AuthSplitScreen';
 
-// Password Strength Mathematical Thresholds
-const strengthChecks = [
-  { re: /.{8,}/, label: 'Includes at least 8 characters' },
-  { re: /[0-9]/, label: 'Includes number' },
-  { re: /[a-z]/, label: 'Includes lowercase letter' },
-  { re: /[A-Z]/, label: 'Includes uppercase letter' },
-  { re: /[$&+,:;=?@#|'<>.^*()%!-]/, label: 'Includes special symbol' },
+// ─── Design tokens (match LoginPage) ─────────────────────────────────────────
+const GREEN     = '#00FF41';
+const GREEN_DIM = 'rgba(0,255,65,0.10)';
+const GREEN_BDR = 'rgba(0,255,65,0.30)';
+const CARD_BG   = 'rgba(255,255,255,0.03)';
+const BORDER    = 'rgba(255,255,255,0.08)';
+
+const inputStyles = {
+  input: {
+    background:  'rgba(255,255,255,0.04)',
+    border:      `1px solid ${BORDER}`,
+    color:       '#e5e5e5',
+    fontFamily:  "'Inter', sans-serif",
+    transition:  'border-color 0.18s, box-shadow 0.18s',
+    '&:focus': {
+      borderColor: GREEN,
+      boxShadow:   `0 0 0 2px ${GREEN_DIM}`,
+    },
+    '&:-webkit-autofill, &:-webkit-autofill:hover, &:-webkit-autofill:focus, &:-webkit-autofill:active': {
+      WebkitBoxShadow: '0 0 0 30px #0d0d0d inset !important',
+      WebkitTextFillColor: '#e5e5e5 !important',
+      transition: 'background-color 5000s ease-in-out 0s',
+    },
+  },
+  label: { color: '#aaa', fontSize: '0.82rem', fontWeight: 500, marginBottom: 6 },
+};
+
+// ─── Password strength meter ──────────────────────────────────────────────────
+const STRENGTH_CHECKS = [
+  { re: /.{8,}/,                     label: 'At least 8 characters' },
+  { re: /[0-9]/,                     label: 'Contains a number' },
+  { re: /[a-z]/,                     label: 'Contains lowercase letter' },
+  { re: /[A-Z]/,                     label: 'Contains uppercase letter' },
+  { re: /[$&+,:;=?@#|'<>.^*()%!-]/, label: 'Contains special character' },
 ];
 
-export default function Register() {
-  const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
+function getStrength(password) {
+  if (!password) return 0;
+  const passed = STRENGTH_CHECKS.filter(c => c.re.test(password)).length;
+  return Math.round((passed / STRENGTH_CHECKS.length) * 100);
+}
+
+function strengthColor(pct) {
+  if (pct === 100) return 'teal';
+  if (pct >= 60)   return 'yellow';
+  return 'red';
+}
+
+// ─── RegisterPage ─────────────────────────────────────────────────────────────
+export default function RegisterPage() {
+  const navigate             = useNavigate();
+  const { login }            = useAuth();
+  const [error, setError]    = useState(null);
+  const [loading, setLoading]= useState(false);
 
   const form = useForm({
-    initialValues: { name: '', email: '', password: '', confirmPassword: '', role: '', language: 'English', terms: false, employeeId: '' },
+    initialValues: {
+      name:            '',
+      email:           '',
+      phone:           '',
+      dob:             '',
+      bloodGroup:      '',
+      password:        '',
+      confirmPassword: '',
+      terms:           false,
+    },
     validate: {
-      name: (val) => (val.trim() ? null : 'Name is required'),
-      email: (val) => (/^\S+@\S+$/.test(val) ? null : 'Invalid email'),
-      password: (val) => (val.length >= 8 ? null : 'Password too short'),
-      confirmPassword: (val, values) => (val === values.password ? null : 'Passwords do not match'),
-      role: (val) => (val ? null : 'Role is required'),
-      terms: (val) => (val ? null : 'Must agree to terms'),
+      name:  (v) => (v.trim().length >= 2 ? null : 'Full name must be at least 2 characters'),
+      email: (v) => (/^\S+@\S+\.\S+$/.test(v.trim()) ? null : 'Enter a valid email address'),
+      password: (v) => {
+        if (v.length < 8)            return 'Password must be at least 8 characters';
+        if (!/[A-Z]/.test(v))        return 'Must contain an uppercase letter';
+        if (!/[0-9]/.test(v))        return 'Must contain a number';
+        return null;
+      },
+      confirmPassword: (v, values) =>
+        v === values.password ? null : 'Passwords do not match',
+      terms: (v) => (v ? null : 'You must accept the terms to continue'),
     },
   });
 
-  const getStrength = (password) => {
-    let multiplier = password.length > 5 ? 0 : 1;
-    let matches = 0;
-    strengthChecks.forEach((check) => { if (check.re.test(password)) matches += 1; });
-    return Math.max(10, (100 / strengthChecks.length) * matches - multiplier * 10);
-  };
-
   const strength = getStrength(form.values.password);
-  const strengthColor = strength === 100 ? 'teal' : strength > 50 ? 'yellow' : 'red';
-  
-  // Collapse Controller Boolean Check
-  const showApprovalAlert = form.values.role === 'Ward Official' || form.values.role === 'Field Worker';
+  const color    = strengthColor(strength);
 
   const handleSubmit = async (values) => {
+    setError(null);
     setLoading(true);
-    let payloadRole = 'citizen';
-    if (values.role === 'Ward Official') payloadRole = 'ward_official';
-    if (values.role === 'Field Worker') payloadRole = 'field_worker';
-
-    const payload = {
-      name: values.name, 
-      email: values.email, 
-      password: values.password, 
-      role: payloadRole,
-      language: values.language === 'English' ? 'en' : 'bn'
-    };
-
-    // Attach dynamic ID constraints targeting the strict backend validation criteria
-    if (payloadRole === 'ward_official') payload.wardId = values.employeeId;
-    if (payloadRole === 'field_worker') payload.employeeId = values.employeeId;
-
     try {
-      await API.post('/auth/register', payload);
-      notifications.show({ title: 'Welcome to CivicResolve!', message: 'Account created! Please sign in below.', color: 'green' });
-      navigate('/login');
+      const res = await API.post('/auth/register', {
+        name:       values.name.trim(),
+        email:      values.email.trim().toLowerCase(),
+        phone:      values.phone.trim(),
+        dob:        values.dob,
+        bloodGroup: values.bloodGroup.trim(),
+        password:   values.password,
+        role:       'citizen',   // Only citizens can self-register; other roles are admin-created
+      });
+
+      const { token, user } = res.data.data;
+      login(token, user);
+
+      notifications.show({
+        title:   'Account created ✓',
+        message: 'Welcome to CivicResolve!',
+        color:   'teal',
+        autoClose: 5000,
+      });
+
+      navigate('/citizen/dashboard', { replace: true });
+
     } catch (err) {
-      notifications.show({ title: 'Registration Blocked', message: err.response?.data?.message || 'Registration pipeline failed dynamically.', color: 'red' });
+      const msg = err.response?.data?.message ?? 'Registration failed. Please try again.';
+      setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Grid gutter={0} style={{ minHeight: '100vh' }}>
-      
-      {/* Forms Framework Zone */}
-      <Grid.Col span={{ base: 12, md: 5 }}>
-        <Flex direction="column" justify="center" h="100%" p="xl" style={{ maxWidth: 500, margin: '0 auto' }}>
-          <Text size="xl" fw={800} c="dark.9" component={Link} to="/" style={{ textDecoration: 'none' }}>📍 CivicResolve</Text>
-          <Title order={1} mt="xl">Join CivicResolve</Title>
-          <Text c="dimmed" mb="xl">Create your account and start making your city better.</Text>
-          
-          <form onSubmit={form.onSubmit(handleSubmit)}>
-            <TextInput label="Full Name" placeholder="Your full name" leftSection={<IconUser size={16} />} {...form.getInputProps('name')} mb="sm" />
-            <TextInput label="Email Address" placeholder="you@example.com" leftSection={<IconMail size={16} />} {...form.getInputProps('email')} mb="sm" />
-            
-            <PasswordInput label="Password" leftSection={<IconLock size={16} />} {...form.getInputProps('password')} mb="xs" />
-            <Progress value={strength} color={strengthColor} size="sm" mb="sm" />
+    <AuthSplitScreen>
+      {/* Mobile Logo (hidden on desktop) */}
+      <Text
+        component={Link}
+        to="/"
+        fw={700}
+        size="xl"
+        mb="xl"
+        hiddenFrom="md"
+        style={{
+          fontFamily: "'Space Grotesk', sans-serif",
+          textDecoration: 'none',
+          letterSpacing: '-0.02em',
+          display: 'block',
+          textAlign: 'center',
+        }}
+      >
+        <span style={{ color: GREEN }}>Civic</span>
+        <span style={{ color: '#fff' }}>Resolve</span>
+      </Text>
 
-            <PasswordInput label="Confirm Password" leftSection={<IconLock size={16} />} {...form.getInputProps('confirmPassword')} mb="sm" />
-            
-            <Select label="Register As" placeholder="Select your role" data={['Citizen', 'Field Worker', 'Ward Official']} {...form.getInputProps('role')} mb="sm" />
-            
-            {/* Dynamic Mantine Dropdown Mechanics */}
-            <Collapse in={showApprovalAlert}>
-              <Alert icon={<IconInfoCircle size={16} />} color="blue" mb="sm">
-                Your account will require admin approval before activation.
-              </Alert>
-              <TextInput label="Employee or Ward ID" placeholder="Enter your ID credential" {...form.getInputProps('employeeId')} mb="sm" />
-            </Collapse>
+      <Card
+        w="100%"
+        maw={440}
+        p="xl"
+        radius="md"
+        style={{
+          background: CARD_BG,
+          border:     `1px solid ${BORDER}`,
+          boxShadow:  '0 24px 64px rgba(0,0,0,0.5)',
+        }}
+      >
+        {/* Header */}
+        <Stack gap="xs" mb="xl">
+          <Title
+            order={2}
+            style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#fff', letterSpacing: '-0.02em' }}
+          >
+            Create account
+          </Title>
+          <Text size="sm" c="dimmed">
+            Already registered?{' '}
+            <Anchor component={Link} to="/login" c="civic.4" size="sm" underline="never">
+              Sign in →
+            </Anchor>
+          </Text>
+        </Stack>
 
-            <Select label="Preferred Language" data={['English', 'বাংলা']} {...form.getInputProps('language')} mb="md" />
+        {/* Citizen-only note */}
+        <Alert
+          icon={<IconShieldCheck size={15} />}
+          color="civic"
+          variant="light"
+          radius="md"
+          mb="lg"
+          style={{ border: `1px solid ${GREEN_BDR}`, background: GREEN_DIM }}
+        >
+          <Text size="xs" c="civic.3">
+            Public registration is for <strong>citizens</strong> only.
+            Ward officials, field workers and admins are created by a system administrator.
+          </Text>
+        </Alert>
 
-            <Checkbox label={<>I agree to the <Anchor color="orange">Terms of Service</Anchor> and <Anchor color="orange">Privacy Policy</Anchor></>} {...form.getInputProps('terms', { type: 'checkbox' })} mb="xl" />
+        {/* Error */}
+        {error && (
+          <Alert
+            icon={<IconAlertCircle size={16} />}
+            color="red"
+            variant="light"
+            radius="md"
+            mb="md"
+            withCloseButton
+            onClose={() => setError(null)}
+            style={{ border: '1px solid rgba(255,80,80,0.25)' }}
+          >
+            {error}
+          </Alert>
+        )}
 
-            <Button fullWidth size="lg" color="orange" radius="xl" type="submit" loading={loading}>Create Account</Button>
-          </form>
+        <form onSubmit={form.onSubmit(handleSubmit)}>
+          <Stack gap="md">
+            {/* Name */}
+            <TextInput
+              label="Full name"
+              placeholder="Alex Rahman"
+              autoComplete="name"
+              leftSection={<IconUser size={16} color="#666" />}
+              styles={inputStyles}
+              {...form.getInputProps('name')}
+            />
 
-          <Text ta="center" mt="md" pb="xl">Already have an account? <Anchor component={Link} to="/login" c="orange">Sign in</Anchor></Text>
-        </Flex>
-      </Grid.Col>
+            {/* Email */}
+            <TextInput
+              label="Email address"
+              placeholder="you@example.com"
+              autoComplete="email"
+              leftSection={<IconMail size={16} color="#666" />}
+              styles={inputStyles}
+              {...form.getInputProps('email')}
+            />
 
-      {/* Visual Generative Illustration Rendering Zone */}
-      <Grid.Col span={{ base: 12, md: 7 }} visibleFrom="md">
-        {/* Cover mechanics explicitly set to contain dimensions dynamically */}
-        <Box h="100%" w="100%" style={{ backgroundImage: `url(${authImage})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundColor: '#fff4e6' }} />
-      </Grid.Col>
-    </Grid>
+            <Group grow>
+              <TextInput
+                label="Phone Number"
+                placeholder="+88017..."
+                styles={inputStyles}
+                {...form.getInputProps('phone')}
+              />
+              <TextInput
+                label="Date of Birth"
+                type="date"
+                styles={inputStyles}
+                {...form.getInputProps('dob')}
+              />
+            </Group>
+
+            <TextInput
+              label="Blood Group"
+              placeholder="A+, O-, etc"
+              styles={inputStyles}
+              {...form.getInputProps('bloodGroup')}
+            />
+
+            {/* Password + strength meter */}
+            <Box>
+              <PasswordInput
+                label="Password"
+                placeholder="Min. 8 characters, 1 uppercase, 1 number"
+                autoComplete="new-password"
+                leftSection={<IconLock size={16} color="#666" />}
+                styles={inputStyles}
+                {...form.getInputProps('password')}
+              />
+              {form.values.password.length > 0 && (
+                <Box mt={8}>
+                  <Progress
+                    value={strength}
+                    color={color}
+                    size={4}
+                    radius="xl"
+                    style={{ background: 'rgba(255,255,255,0.07)' }}
+                  />
+                  <Text
+                    size="xs"
+                    mt={4}
+                    c={strength === 100 ? 'teal' : strength >= 60 ? 'yellow' : 'red'}
+                    style={{ fontFamily: "'Inter', sans-serif" }}
+                  >
+                    {strength === 100
+                      ? '✓ Strong password'
+                      : strength >= 60
+                      ? 'Moderate — add uppercase or special characters'
+                      : 'Weak — add numbers and uppercase letters'}
+                  </Text>
+                </Box>
+              )}
+            </Box>
+
+            {/* Confirm password */}
+            <PasswordInput
+              label="Confirm password"
+              placeholder="Re-enter password"
+              autoComplete="new-password"
+              leftSection={<IconLock size={16} color="#666" />}
+              styles={inputStyles}
+              {...form.getInputProps('confirmPassword')}
+            />
+
+            {/* Terms */}
+            <Checkbox
+              label={
+                <Text size="sm" c="dimmed">
+                  I agree to the{' '}
+                  <Anchor c="civic.4" size="sm" underline="never" href="#">
+                    Terms of Service
+                  </Anchor>{' '}
+                  and{' '}
+                  <Anchor c="civic.4" size="sm" underline="never" href="#">
+                    Privacy Policy
+                  </Anchor>
+                </Text>
+              }
+              color="civic"
+              {...form.getInputProps('terms', { type: 'checkbox' })}
+            />
+
+            <Button
+              type="submit"
+              fullWidth
+              size="md"
+              color="civic"
+              radius="md"
+              loading={loading}
+              rightSection={!loading && <IconArrowRight size={16} />}
+              style={{
+                fontFamily:    "'Space Grotesk', sans-serif",
+                fontWeight:    700,
+                marginTop:     4,
+                boxShadow:     `0 0 20px rgba(0,255,65,0.25)`,
+                letterSpacing: '0.01em',
+              }}
+            >
+              Create account
+            </Button>
+          </Stack>
+        </form>
+      </Card>
+    </AuthSplitScreen>
   );
 }
