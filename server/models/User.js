@@ -24,8 +24,13 @@ const userSchema = new mongoose.Schema(
     },
     passwordHash: {
       type: String,
-      required: true,
+      required: false,
       select: false, // Never returned in queries by default
+    },
+
+    googleId: {
+      type: String,
+      select: false,
     },
     role: {
       type: String,

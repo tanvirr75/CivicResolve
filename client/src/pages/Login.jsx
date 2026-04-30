@@ -21,6 +21,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { useTranslation } from 'react-i18next';
+import { GoogleLogin } from '@react-oauth/google';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -77,6 +78,22 @@ export default function LoginPage() {
       password: (v) => (v.length >= 1                   ? null : 'Password is required'),
     },
   });
+
+  const handleGoogleSuccess = async ({ credential }) => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await API.post('/auth/google', { credential });
+      const { token, user } = res.data.data;
+      login(token, user);
+      notifications.show({ title: 'Welcome 👋', message: `Signed in as ${user.name}.`, color: 'civic' });
+      navigate(ROLE_REDIRECT[user.role] ?? '/dashboard', { replace: true });
+    } catch (err) {
+      setError(err.response?.data?.message ?? 'Google sign-in failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (values) => {
     setError(null);
@@ -214,7 +231,25 @@ export default function LoginPage() {
       </form>
 
       <Divider
-        my="xl"
+        my="lg"
+        color="rgba(255,255,255,0.06)"
+        label={<Text size="xs" c="dimmed">{t('Or sign in with')}</Text>}
+        labelPosition="center"
+      />
+
+      <Stack align="center" mb="md">
+        <GoogleLogin
+          onSuccess={handleGoogleSuccess}
+          onError={() => setError('Google sign-in failed. Please try again.')}
+          theme="filled_black"
+          shape="rectangular"
+          size="large"
+          width="320"
+        />
+      </Stack>
+
+      <Divider
+        my="lg"
         color="rgba(255,255,255,0.06)"
         label={<Text size="xs" c="dimmed">{t('Or continue as')}</Text>}
         labelPosition="center"

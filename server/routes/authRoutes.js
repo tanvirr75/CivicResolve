@@ -1,6 +1,6 @@
 const express = require('express');
 const { body }  = require('express-validator');
-const { register, login, getMe, logout, getFieldWorkers, getUsers, updateUserRole, toggleUserActive, resetUserPassword, changePassword, uploadAvatar, getSettings, updateSettings } = require('../controllers/authController');
+const { register, login, getMe, logout, getFieldWorkers, getUsers, updateUserRole, toggleUserActive, resetUserPassword, changePassword, uploadAvatar, getSettings, updateSettings, googleLogin } = require('../controllers/authController');
 const { authenticate, authorize } = require('../middleware/authenticate');
 const { uploadSingle } = require('../middleware/upload');
 
@@ -97,6 +97,9 @@ const loginValidation = [
 ];
 
 // ── Routes ─────────────────────────────────────────────────────────────────
+
+// POST /api/auth/google — Google OAuth sign-in/sign-up
+router.post('/google', googleLogin);
 
 // POST /api/auth/register
 router.post('/register', registerValidation, register);

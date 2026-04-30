@@ -492,8 +492,12 @@ const changePassword = async (req, res, next) => {
     if (newPassword.length < 8) {
       return res.status(400).json({ success: false, message: 'New password must be at least 8 characters.' });
     }
-    const user = await User.findById(req.user._id).select('+passwordHash');
+    const user = await User.findById(req.user._id).select('+passwordHash +googleId');
     if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+    if (!user.passwordHash) {
+      return res.status(400).json({ success: false, message: 'Google sign-in accounts cannot change password here. Use your Google account settings.' });
+    }
 
     const match = await user.comparePassword(currentPassword);
     if (!match) {
@@ -573,4 +577,64 @@ const updateSettings = async (req, res, next) => {
   }
 };
 
-module.exports = { register, login, getMe, logout, getFieldWorkers, updateProfile, getUsers, updateUserRole, toggleUserActive, resetUserPassword, changePassword, uploadAvatar, getSettings, updateSettings };
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Google OAuth sign-in / sign-up
+// @route   POST /api/auth/google
+// @access  Public
+// ─────────────────────────────────────────────────────────────────────────────
+const { OAuth2Client } = require('google-auth-library');
+
+const googleLogin = async (req, res, next) => {
+  try {
+    const { credential } = req.body;
+    if (!credential) {
+      return res.status(400).json({ success: false, message: 'Google credential token is required.' });
+    }
+
+    const client  = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    const ticket  = await client.verifyIdToken({
+      idToken:  credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Google account must have a verified email.' });
+    }
+
+    // Find existing user by email or googleId
+    let user = await User.findOne({ $or: [{ email }, { googleId }] });
+
+    if (user) {
+      // Link googleId if they previously registered with email/password
+      if (!user.googleId) {
+        user.googleId = googleId;
+        if (!user.avatar && picture) user.avatar = picture;
+        await user.save();
+      }
+      if (!user.isActive) {
+        return res.status(403).json({ success: false, message: 'Your account has been deactivated. Contact support.' });
+      }
+    } else {
+      // Create a new citizen account
+      user = await User.create({
+        name:     name || email.split('@')[0],
+        email,
+        googleId,
+        role:     'citizen',
+        language: 'en',
+        isActive: true,
+        ...(picture && { avatar: picture }),
+      });
+    }
+
+    User.findByIdAndUpdate(user._id, { lastLogin: new Date() }).exec();
+
+    return sendTokenResponse(user, 200, res);
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { register, login, getMe, logout, getFieldWorkers, updateProfile, getUsers, updateUserRole, toggleUserActive, resetUserPassword, changePassword, uploadAvatar, getSettings, updateSettings, googleLogin };

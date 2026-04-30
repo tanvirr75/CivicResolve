@@ -14,6 +14,7 @@ import {
   Group,
   Checkbox,
   Stepper,
+  Divider,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import {
@@ -31,6 +32,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { useTranslation } from 'react-i18next';
+import { GoogleLogin } from '@react-oauth/google';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import AuthSplitScreen from '../layouts/AuthSplitScreen';
@@ -120,6 +122,22 @@ export default function RegisterPage() {
     if (!hasErrors) {
       setError(null);
       setStep(1);
+    }
+  };
+
+  const handleGoogleSuccess = async ({ credential }) => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await API.post('/auth/google', { credential });
+      const { token, user } = res.data.data;
+      login(token, user);
+      notifications.show({ title: 'Account created ✓', message: 'Welcome to CivicResolve!', color: 'teal', autoClose: 5000 });
+      navigate('/citizen/dashboard', { replace: true });
+    } catch (err) {
+      setError(err.response?.data?.message ?? 'Google sign-up failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -230,6 +248,29 @@ export default function RegisterPage() {
             Ward officials, field workers and admins are created by a system administrator.
           </Text>
         </Alert>
+
+        {/* Google sign-up (step 0 only) */}
+        {step === 0 && (
+          <>
+            <Stack align="center" mb="md">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => setError('Google sign-up failed. Please try again.')}
+                theme="filled_black"
+                shape="rectangular"
+                size="large"
+                width="320"
+                text="signup_with"
+              />
+            </Stack>
+            <Divider
+              mb="md"
+              color="rgba(255,255,255,0.06)"
+              label={<Text size="xs" c="dimmed">Or register with email</Text>}
+              labelPosition="center"
+            />
+          </>
+        )}
 
         {/* Server error */}
         {error && (
