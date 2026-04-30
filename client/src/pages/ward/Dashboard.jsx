@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Title, Text, Group, Stack, SimpleGrid, Card, ThemeIcon,
-  Badge, Table, Anchor, Skeleton, RingProgress, Center,
+  Badge, Table, Anchor, Skeleton, RingProgress, Center, Alert,
 } from '@mantine/core';
 import {
   IconFileReport, IconClockHour4, IconCircleCheck,
-  IconChartDonut, IconExternalLink,
+  IconChartDonut, IconExternalLink, IconSparkles,
 } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import API from '../../services/api';
@@ -60,7 +60,9 @@ export default function WardDashboard() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [kpi, setKpi] = useState({ open: undefined, assignedToday: undefined, avgResolutionHrs: undefined });
-  const [catData, setCatData] = useState([]);   // [{ label, count, color }]
+  const [catData, setCatData] = useState([]);
+  const [aiSummary, setAiSummary] = useState(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -106,6 +108,14 @@ export default function WardDashboard() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  useEffect(() => {
+    setSummaryLoading(true);
+    API.get('/reports/ward/summary')
+      .then(res => setAiSummary(res.data.data?.summary ?? null))
+      .catch(() => setAiSummary(null))
+      .finally(() => setSummaryLoading(false));
+  }, []);
+
   // Priority colour
   const prioColor = (score) =>
     score >= 8 ? '#ef4444' : score >= 4 ? '#f59e0b' : '#6b7280';
@@ -122,6 +132,26 @@ export default function WardDashboard() {
           {user?.wardId ? `Ward ID: ${user.wardId}` : 'No ward assigned'} · Live overview
         </Text>
       </Box>
+
+      {/* AI Daily Briefing */}
+      {summaryLoading ? (
+        <Skeleton height={64} radius="md" mb="xl" />
+      ) : aiSummary ? (
+        <Alert
+          mb="xl"
+          radius="md"
+          icon={<IconSparkles size={18} />}
+          styles={{
+            root: { background: 'rgba(0,255,65,0.05)', border: '1px solid rgba(0,255,65,0.2)' },
+            icon: { color: GREEN },
+            title: { color: GREEN, fontFamily: "'Space Grotesk', sans-serif", fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' },
+            message: { color: '#d1d5db', fontSize: '0.88rem', lineHeight: 1.6 },
+          }}
+          title="AI Morning Briefing"
+        >
+          {aiSummary}
+        </Alert>
+      ) : null}
 
       {/* KPI strip */}
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md" mb="xl">

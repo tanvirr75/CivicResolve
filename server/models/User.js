@@ -93,6 +93,32 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+
+    // ── Avatar ───────────────────────────────────────
+    avatar: {
+      type: String,
+      trim: true,
+    },
+
+    // ── User Settings ────────────────────────────────
+    settings: {
+      // Common
+      emailNotifications: { type: Boolean, default: true },
+      pushNotifications:  { type: Boolean, default: true },
+      profilePublic:      { type: Boolean, default: true },
+      // Citizen
+      defaultAnonymous:   { type: Boolean, default: false },
+      notifyStatusChange: { type: Boolean, default: true },
+      // Ward Official
+      aiDailyBriefing:    { type: Boolean, default: true },
+      emailNewReport:     { type: Boolean, default: true },
+      // Field Worker
+      availableForWork:   { type: Boolean, default: true },
+      notifyWorkOrder:    { type: Boolean, default: true },
+      // System Admin
+      weeklyDigest:       { type: Boolean, default: true },
+      autoSpamFlagging:   { type: Boolean, default: true },
+    },
   },
   {
     timestamps: true, // createdAt + updatedAt auto-managed

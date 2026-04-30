@@ -1,6 +1,7 @@
 const jwt  = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
 const User = require('../models/User');
+const { uploadBuffer } = require('../services/cloudinaryService');
 
 // ── Helper: sign a JWT ─────────────────────────────────────────────────────
 const signToken = (userId, role) => {
@@ -272,7 +273,8 @@ const updateProfile = async (req, res, next) => {
     const {
       name, phone, dob, bloodGroup, nationality, address, nid, emergencyContact,
       wardId, jurisdiction, officeAddress, contactNumber,
-      employeeId, expertise, vehicleType, workingHours
+      employeeId, expertise, vehicleType, workingHours,
+      adminLevel, accessScope, language,
     } = req.body;
 
     if (name) user.name = name;
@@ -283,6 +285,7 @@ const updateProfile = async (req, res, next) => {
     if (address !== undefined) user.address = address;
     if (nid !== undefined) user.nid = nid;
     if (emergencyContact !== undefined) user.emergencyContact = emergencyContact;
+    if (language && ['en', 'bn'].includes(language)) user.language = language;
 
     if (user.role === 'ward_official') {
       if (wardId !== undefined) user.wardId = wardId;
@@ -296,6 +299,11 @@ const updateProfile = async (req, res, next) => {
       if (expertise !== undefined) user.expertise = expertise;
       if (vehicleType !== undefined) user.vehicleType = vehicleType;
       if (workingHours !== undefined) user.workingHours = workingHours;
+    }
+
+    if (user.role === 'system_admin') {
+      if (adminLevel !== undefined) user.adminLevel = adminLevel;
+      if (accessScope !== undefined) user.accessScope = accessScope;
     }
 
     await user.save();
@@ -499,4 +507,70 @@ const changePassword = async (req, res, next) => {
   }
 };
 
-module.exports = { register, login, getMe, logout, getFieldWorkers, updateProfile, getUsers, updateUserRole, toggleUserActive, resetUserPassword, changePassword };
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Upload / replace profile avatar
+// @route   PUT /api/auth/avatar
+// @access  Private
+// ─────────────────────────────────────────────────────────────────────────────
+const uploadAvatar = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No image file provided.' });
+    }
+    const { secure_url } = await uploadBuffer(req.file.buffer, 'civicresolve/avatars');
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { avatar: secure_url },
+      { new: true }
+    );
+    return res.status(200).json({ success: true, data: { user: user.toSafeObject() } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Get current user settings
+// @route   GET /api/auth/settings
+// @access  Private
+// ─────────────────────────────────────────────────────────────────────────────
+const getSettings = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id).lean();
+    return res.status(200).json({ success: true, data: { settings: user.settings ?? {} } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Update one or more settings keys
+// @route   PUT /api/auth/settings
+// @access  Private
+// ─────────────────────────────────────────────────────────────────────────────
+const ALLOWED_SETTINGS = [
+  'emailNotifications', 'pushNotifications', 'profilePublic',
+  'defaultAnonymous', 'notifyStatusChange',
+  'aiDailyBriefing', 'emailNewReport',
+  'availableForWork', 'notifyWorkOrder',
+  'weeklyDigest', 'autoSpamFlagging',
+];
+
+const updateSettings = async (req, res, next) => {
+  try {
+    const update = {};
+    for (const [k, v] of Object.entries(req.body)) {
+      if (ALLOWED_SETTINGS.includes(k)) update[`settings.${k}`] = v;
+    }
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: update },
+      { new: true, runValidators: false }
+    );
+    return res.status(200).json({ success: true, data: { settings: user.settings } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { register, login, getMe, logout, getFieldWorkers, updateProfile, getUsers, updateUserRole, toggleUserActive, resetUserPassword, changePassword, uploadAvatar, getSettings, updateSettings };

@@ -13,6 +13,9 @@ import Login              from './pages/Login';
 import Register           from './pages/Register';
 import PublicReportDetail from './pages/PublicReportDetail';
 import NotFound           from './pages/NotFound';
+import WardPublicStats    from './pages/WardPublicStats';
+import AnonSubmitReport   from './pages/AnonSubmitReport';
+import Settings           from './pages/Settings';
 
 // ── Citizen pages ─────────────────────────────────────────────────────────────
 import CitizenDashboard   from './pages/citizen/Dashboard';
@@ -99,8 +102,10 @@ export default function App() {
           <Route path="/"            element={<LandingPage />} />
           <Route path="/login"       element={<Login />} />
           <Route path="/register"    element={<Register />} />
-          <Route path="/reports/:id" element={<PublicReportDetail />} />
-          <Route path="/map"         element={<MapView />} />
+          <Route path="/reports/:id"          element={<PublicReportDetail />} />
+          <Route path="/ward-stats/:wardId"  element={<WardPublicStats />} />
+          <Route path="/submit-anonymous"    element={<AnonSubmitReport />} />
+          <Route path="/map"                 element={<MapView />} />
 
           {/* ── Citizen — role: citizen ── */}
           <Route element={<PrivateRoute allowedRole="citizen" />}>
@@ -113,6 +118,7 @@ export default function App() {
           <Route element={<PrivateRoute />}>
             <Route path="/notifications"          element={<NotificationsPage />} />
             <Route path="/profile"                element={<Profile />} />
+            <Route path="/settings"               element={<Settings />} />
           </Route>
 
           {/* ── Ward Official — role: ward_official ── */}

@@ -17,7 +17,7 @@ import {
   Burger,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { motion, useAnimation, useInView } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -155,16 +155,9 @@ const STEPS = [
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function LandingPage() {
-  const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated } = useAuth();
   const [scrolled, setScrolled]   = useState(false);
   const [navOpen,  { open: openNav, close: closeNav }] = useDisclosure(false);
-
-  const dashboardUrl =
-    user?.role === 'ward_official' ? '/ward/dashboard' :
-    user?.role === 'field_worker'  ? '/field/dashboard' :
-    user?.role === 'system_admin'  ? '/admin/dashboard' :
-    '/citizen/dashboard';
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10);
@@ -195,11 +188,8 @@ export default function LandingPage() {
         <Stack gap="md" mt="md">
           {[
             { label: 'Public Map', to: '/map' },
-            ...(isAuthenticated() ? [{ label: 'Dashboard', to: dashboardUrl }] : []),
-            ...(!isAuthenticated() ? [
-              { label: 'Login', to: '/login' },
-              { label: 'Register', to: '/register' }
-            ] : []),
+            { label: 'Login',      to: '/login' },
+            { label: 'Register',   to: '/register' },
           ].map(link => (
             <Anchor
               key={link.label}
@@ -216,25 +206,14 @@ export default function LandingPage() {
               {link.label}
             </Anchor>
           ))}
-          {!isAuthenticated() ? (
-            <Button
-              component={Link} to="/register"
-              size="sm" radius="md" color="civic" fullWidth
-              onClick={closeNav}
-              style={{ fontFamily: "'Space Grotesk', sans-serif", marginTop: 8 }}
-            >
-              Get Started
-            </Button>
-          ) : (
-            <Button
-              component={Link} to={dashboardUrl}
-              size="sm" radius="md" color="civic" fullWidth
-              onClick={closeNav}
-              style={{ fontFamily: "'Space Grotesk', sans-serif", marginTop: 8 }}
-            >
-              Go to Dashboard
-            </Button>
-          )}
+          <Button
+            component={Link} to="/register"
+            size="sm" radius="md" color="civic" fullWidth
+            onClick={closeNav}
+            style={{ fontFamily: "'Space Grotesk', sans-serif", marginTop: 8 }}
+          >
+            Create Free Account
+          </Button>
         </Stack>
       </Drawer>
 
@@ -274,32 +253,20 @@ export default function LandingPage() {
           >
             Public Map
           </Anchor>
-          {!isAuthenticated() ? (
-            <>
-              <Anchor component={Link} to="/login" c="dimmed" size="sm" underline="never"
-                style={{ transition: 'color .15s', marginLeft: 16, marginRight: 8 }}
-                onMouseEnter={e => e.target.style.color = '#fff'}
-                onMouseLeave={e => e.target.style.color = ''}
-              >
-                Login
-              </Anchor>
-              <Button
-                component={Link} to="/register"
-                size="xs" radius="md" color="civic"
-                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-              >
-                Get Started
-              </Button>
-            </>
-          ) : (
-            <Button
-              component={Link} to={dashboardUrl}
-              size="xs" radius="md" color="civic" ml="md"
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-            >
-              Dashboard
-            </Button>
-          )}
+          <Anchor component={Link} to="/login" c="dimmed" size="sm" underline="never"
+            style={{ transition: 'color .15s', marginLeft: 16 }}
+            onMouseEnter={e => e.target.style.color = '#fff'}
+            onMouseLeave={e => e.target.style.color = ''}
+          >
+            Login
+          </Anchor>
+          <Button
+            component={Link} to="/register"
+            size="xs" radius="md" color="civic"
+            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+          >
+            Register
+          </Button>
         </Group>
 
         {/* Mobile hamburger */}
@@ -446,7 +413,7 @@ export default function LandingPage() {
               <Group justify="center" gap="md">
                 <Button
                   component={Link}
-                  to={isAuthenticated() ? "/citizen/submit" : "/login"}
+                  to="/login"
                   size="lg"
                   radius="md"
                   color="civic"
@@ -1086,10 +1053,10 @@ export default function LandingPage() {
                   Platform
                 </Text>
                 {[
-                  { label: 'Map Dashboard', to: '/dashboard' },
-                  { label: 'Submit Report',  to: '/report' },
-                  { label: 'Register',       to: '/register' },
-                  { label: 'Login',          to: '/login' },
+                  { label: 'Public Map',    to: '/map' },
+                  { label: 'Submit Report', to: '/login' },
+                  { label: 'Register',      to: '/register' },
+                  { label: 'Login',         to: '/login' },
                 ].map(link => (
                   <Anchor
                     key={link.label}

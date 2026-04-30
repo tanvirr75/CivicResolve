@@ -1,8 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
-  Box,
   Card,
-  Center,
   Title,
   Text,
   TextInput,
@@ -12,7 +10,6 @@ import {
   Alert,
   Stack,
   Divider,
-  Group,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import {
@@ -37,8 +34,7 @@ const ROLE_REDIRECT = {
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const GREEN     = '#00FF41';
-const GREEN_DIM = 'rgba(0,255,65,0.10)';
-const GREEN_BDR = 'rgba(0,255,65,0.30)';
+const GREEN_DIM = 'rgba(0,255,65,0.12)';
 const CARD_BG   = 'rgba(255,255,255,0.03)';
 const BORDER    = 'rgba(255,255,255,0.08)';
 
@@ -224,10 +220,19 @@ export default function LoginPage() {
         labelPosition="center"
       />
 
-      <Group justify="center">
+      <Stack gap="xs" align="center">
         <Anchor
           component={Link}
           to="/register"
+          size="sm"
+          c="civic.4"
+          underline="never"
+        >
+          {t('Create an account to submit reports →')}
+        </Anchor>
+        <Anchor
+          component={Link}
+          to="/submit-anonymous"
           size="sm"
           c="dimmed"
           underline="never"
@@ -235,9 +240,9 @@ export default function LoginPage() {
           onMouseEnter={e => e.target.style.color = GREEN}
           onMouseLeave={e => e.target.style.color = ''}
         >
-          {t('Create an account to submit reports →')}
+          Submit a report anonymously (no account needed) →
         </Anchor>
-      </Group>
+      </Stack>
       </Card>
     </AuthSplitScreen>
   );

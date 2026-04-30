@@ -12,7 +12,7 @@ import DrawerWorkOrderPanel from './drawer/DrawerWorkOrderPanel';
 import DrawerCommentThread  from './drawer/DrawerCommentThread';
 
 export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [report,          setReport]          = useState(null);
   const [loading,         setLoading]         = useState(false);
   const [commentText,     setCommentText]     = useState('');
@@ -62,18 +62,22 @@ export default function ReportDetailsDrawer({ reportId, opened, onClose }) {
   }, [report]);
 
   const handleToggleUpvote = async () => {
+    if (!isAuthenticated()) {
+      notifications.show({ title: 'Login required', message: 'You must be logged in to upvote.', color: 'orange' });
+      return;
+    }
     setProcessingAction(true);
     try {
       const res = await API.put(`/reports/${reportId}/upvote`);
       const isAdded = res.data.message.includes('added');
       setReport(prev => ({
         ...prev,
-        upvoteCount:      res.data.data.upvoteCount,
-        priorityScore:    res.data.data.priorityScore,
+        upvoteCount:       res.data.data.upvoteCount,
+        priorityScore:     res.data.data.priorityScore,
         hasEmulatedUpvote: isAdded,
       }));
     } catch {
-      notifications.show({ title: 'Sign in required', message: 'You must be logged in to upvote.', color: 'orange' });
+      notifications.show({ title: 'Error', message: 'Could not process upvote.', color: 'red' });
     } finally {
       setProcessingAction(false);
     }

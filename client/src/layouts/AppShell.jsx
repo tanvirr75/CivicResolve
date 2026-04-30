@@ -28,6 +28,7 @@ import {
   IconBriefcase,
   IconNotes,
   IconUserEdit,
+  IconSettings,
 } from '@tabler/icons-react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
@@ -126,6 +127,7 @@ export default function CivicAppShell({ children }) {
   const [opened, { toggle, close }] = useDisclosure();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const role  = user?.role ?? 'citizen';
   const links = NAV_CONFIG[role] ?? NAV_CONFIG.citizen;
@@ -275,6 +277,16 @@ export default function CivicAppShell({ children }) {
 
         {/* Bottom: settings + logout */}
         <Box px="xs" py="sm" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <NavLink
+            label={t('Settings')}
+            leftSection={<IconSettings size={18} stroke={1.8} />}
+            component={Link}
+            to="/settings"
+            active={location.pathname === '/settings'}
+            variant="subtle"
+            color="gray"
+            style={{ borderRadius: '6px' }}
+          />
           <NavLink
             label={t('Logout')}
             leftSection={<IconLogout size={18} stroke={1.8} />}

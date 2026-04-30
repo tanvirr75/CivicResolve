@@ -7,6 +7,8 @@ import {
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { useMapTheme } from '../../hooks/useMapTheme';
+import MapThemeToggle from '../../components/MapThemeToggle';
 import {
   IconMapPin, IconFileText, IconCircleCheck, IconAlertCircle,
   IconArrowLeft, IconDownload, IconSend,
@@ -46,14 +48,14 @@ const inputSm = {
 
 // ─── Priority bar ─────────────────────────────────────────────────────────────
 function PriorityBar({ score }) {
-  const pct   = ((score ?? 0) / 5) * 100;
-  const color = score >= 4 ? 'red' : score >= 2 ? 'yellow' : 'gray';
+  const pct   = ((score ?? 0) / 10) * 100;
+  const color = score >= 8 ? 'red' : score >= 4 ? 'yellow' : 'gray';
   return (
     <Box>
       <Group justify="space-between" mb={6}>
         <Text size="xs" c="dimmed" fw={600} tt="uppercase" style={{ letterSpacing: '0.06em' }}>Priority Score</Text>
         <Text size="xs" fw={700} c={color === 'red' ? '#ef4444' : color === 'yellow' ? '#f59e0b' : '#6b7280'}>
-          {score ?? '—'} / 5
+          {score ?? '—'} / 10
         </Text>
       </Group>
       <Progress value={pct} color={color} size={6} radius="xl"
@@ -89,6 +91,7 @@ function CommentBubble({ comment }) {
 export default function ReportDetail() {
   const { id }     = useParams();
   const { user }   = useAuth();
+  const { theme, toggleTheme, tileUrl, attribution } = useMapTheme();
 
   const [report,       setReport]       = useState(null);
   const [loading,      setLoading]      = useState(true);
@@ -281,18 +284,20 @@ export default function ReportDetail() {
           {/* Map pin */}
           {lat && lng && (
             <Card p={0} radius="md" style={{ border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
-              <MapContainer
-                center={[lat, lng]}
-                zoom={15}
-                zoomControl={false}
-                style={{ height: 220, width: '100%' }}
-              >
-                <TileLayer
-                  url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                  attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-                />
-                <Marker position={[lat, lng]} />
-              </MapContainer>
+              <Box style={{ position: 'relative' }}>
+                <MapContainer
+                  center={[lat, lng]}
+                  zoom={15}
+                  zoomControl={false}
+                  style={{ height: 220, width: '100%' }}
+                >
+                  <TileLayer url={tileUrl} attribution={attribution} />
+                  <Marker position={[lat, lng]} />
+                </MapContainer>
+                <Box style={{ position: 'absolute', top: 8, right: 8, zIndex: 1000 }}>
+                  <MapThemeToggle theme={theme} onToggle={toggleTheme} />
+                </Box>
+              </Box>
             </Card>
           )}
 

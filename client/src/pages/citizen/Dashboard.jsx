@@ -15,6 +15,8 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import API from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useMapTheme } from '../../hooks/useMapTheme';
+import MapThemeToggle from '../../components/MapThemeToggle';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const GREEN = '#00FF41';
@@ -87,6 +89,7 @@ function StatCard({ icon: Icon, label, value, iconColor = GREEN }) {
 export default function CitizenDashboard() {
   const { user } = useAuth();
   const { t }    = useTranslation();
+  const { theme, toggleTheme, tileUrl, attribution } = useMapTheme();
   const [reports, setReports] = useState([]);
   const [stats, setStats] = useState({ open: 0, assigned: 0, inProgress: 0, resolved: 0, total: 0 });
   const [statsLoading, setStatsLoading] = useState(true);
@@ -232,17 +235,17 @@ export default function CitizenDashboard() {
         </Group>
         <Box style={{ height: 280, borderRadius: 8, overflow: 'hidden', position: 'relative' }}>
           <MapContainer
-            center={[23.8103, 90.4125]} // Default center
+            center={[23.8103, 90.4125]}
             zoom={12}
             zoomControl={false}
             style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', zIndex: 1 }}
           >
-            <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-              attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-            />
+            <TileLayer url={tileUrl} attribution={attribution} />
             {heatmapPoints.length > 0 && <HeatmapLayer points={heatmapPoints} />}
           </MapContainer>
+          <Box style={{ position: 'absolute', top: 8, right: 8, zIndex: 1000 }}>
+            <MapThemeToggle theme={theme} onToggle={toggleTheme} />
+          </Box>
         </Box>
       </Card>
 

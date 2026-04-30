@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box, Text, Group, Stack, Badge, Card, Select, Switch, Button,
-  ScrollArea, Skeleton, ThemeIcon, ActionIcon, Divider,
+  ScrollArea, Skeleton, ThemeIcon, ActionIcon, Divider, Tooltip,
 } from '@mantine/core';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -15,6 +15,8 @@ import { notifications } from '@mantine/notifications';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import API from '../../services/api';
+import { useMapTheme } from '../../hooks/useMapTheme';
+import MapThemeToggle from '../../components/MapThemeToggle';
 
 // ── Leaflet default icons ─────────────────────────────────────────────────────
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -76,7 +78,8 @@ function MapController({ flyToRef }) {
 export default function MapView() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
-  
+  const { theme, toggleTheme, tileUrl, attribution } = useMapTheme();
+
   const [reports,    setReports]    = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [heatmap,    setHeatmap]    = useState(false);
@@ -115,8 +118,7 @@ export default function MapView() {
   // ── Upvote ────────────────────────────────────────────────────────────────
   const handleUpvote = useCallback(async (reportId) => {
     if (!isAuthenticated()) {
-      notifications.show({ title: 'Login Required', message: 'Please login or register to upvote issues.', color: 'civic' });
-      navigate('/login');
+      notifications.show({ title: 'Login required', message: 'Please login or register to upvote issues.', color: 'orange', autoClose: 3000 });
       return;
     }
     
@@ -155,10 +157,7 @@ export default function MapView() {
         zoomControl
         style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', zIndex: 1 }}
       >
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-        />
+        <TileLayer url={tileUrl} attribution={attribution} />
         {/* Wire MapController so flyTo works from outside MapContainer */}
         <MapController flyToRef={flyToRef} />
 
@@ -190,17 +189,31 @@ export default function MapView() {
                     {r.title}
                   </Text>
                   <Text size="xs" c="dimmed" mb={8}>{r.status}</Text>
-                  <Button
-                    size="xs"
-                    fullWidth
-                    radius="sm"
-                    leftSection={<IconArrowUp size={12} />}
-                    disabled={upvotedIds.has(r._id)}
-                    style={{ background: GREEN, color: '#000', fontWeight: 700, fontSize: '0.78rem' }}
-                    onClick={() => handleUpvote(r._id)}
+                  <Tooltip
+                    label="Login or register to upvote"
+                    disabled={isAuthenticated()}
+                    withArrow
+                    position="bottom"
+                    color="dark"
                   >
-                    {upvotedIds.has(r._id) ? 'Voted' : `Upvote (${r.upvoteCount ?? 0})`}
-                  </Button>
+                    <Button
+                      size="xs"
+                      fullWidth
+                      radius="sm"
+                      leftSection={<IconArrowUp size={12} />}
+                      disabled={upvotedIds.has(r._id)}
+                      style={{
+                        background: isAuthenticated() ? GREEN : 'rgba(255,255,255,0.08)',
+                        color: isAuthenticated() ? '#000' : '#888',
+                        fontWeight: 700,
+                        fontSize: '0.78rem',
+                        cursor: isAuthenticated() ? 'pointer' : 'not-allowed',
+                      }}
+                      onClick={() => handleUpvote(r._id)}
+                    >
+                      {!isAuthenticated() ? `🔒 Upvote (${r.upvoteCount ?? 0})` : upvotedIds.has(r._id) ? 'Voted' : `Upvote (${r.upvoteCount ?? 0})`}
+                    </Button>
+                  </Tooltip>
                 </Box>
               </Popup>
             </CircleMarker>
@@ -226,6 +239,9 @@ export default function MapView() {
           <IconFlame size={16} color={heatmap ? GREEN : '#555'} />
           <Text size="xs" c={heatmap ? 'civic.4' : 'dimmed'} fw={500}>Heatmap</Text>
           <Switch size="xs" color="civic" checked={heatmap} onChange={e => setHeatmap(e.currentTarget.checked)} />
+
+          <Box style={{ width: 1, height: 18, background: BORDER }} />
+          <MapThemeToggle theme={theme} onToggle={toggleTheme} />
 
           {/* Divider + Locate Me */}
           <Box style={{ width: 1, height: 18, background: BORDER }} />
@@ -387,18 +403,26 @@ export default function MapView() {
                               color={r.status === 'Open' ? 'yellow' : r.status === 'Assigned' ? 'blue' : 'orange'}>
                               {r.status}
                             </Badge>
-                            <Button
-                              size="xs"
-                              variant="subtle"
-                              color="civic"
-                              compact="true"
-                              leftSection={<IconArrowUp size={11} />}
-                              disabled={upvotedIds.has(r._id)}
-                              onClick={() => handleUpvote(r._id)}
-                              style={{ fontSize: '0.72rem', height: 22, padding: '0 8px' }}
+                            <Tooltip
+                              label="Login or register to upvote"
+                              disabled={isAuthenticated()}
+                              withArrow
+                              position="top"
+                              color="dark"
                             >
-                              {upvotedIds.has(r._id) ? 'Voted' : 'Upvote'}
-                            </Button>
+                              <Button
+                                size="xs"
+                                variant={isAuthenticated() ? 'subtle' : 'default'}
+                                color={isAuthenticated() ? 'civic' : 'gray'}
+                                compact="true"
+                                leftSection={<IconArrowUp size={11} />}
+                                disabled={upvotedIds.has(r._id)}
+                                onClick={() => handleUpvote(r._id)}
+                                style={{ fontSize: '0.72rem', height: 22, padding: '0 8px', opacity: isAuthenticated() ? 1 : 0.5 }}
+                              >
+                                {!isAuthenticated() ? '🔒' : upvotedIds.has(r._id) ? 'Voted' : 'Upvote'}
+                              </Button>
+                            </Tooltip>
                           </Group>
                         </Card>
                       </motion.div>

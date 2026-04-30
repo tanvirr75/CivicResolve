@@ -17,6 +17,8 @@ import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-do
 import { notifications } from '@mantine/notifications';
 import { useTranslation } from 'react-i18next';
 import API from '../../services/api';
+import { useMapTheme } from '../../hooks/useMapTheme';
+import MapThemeToggle from '../../components/MapThemeToggle';
 
 // ── Leaflet icon fix ──────────────────────────────────────────────────────────
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -51,8 +53,8 @@ const SEVERITY_CONFIG = {
   10:{ label: 'Emergency',color: 'purple' },
 };
 
-// ─── Step labels ──────────────────────────────────────────────────────────────
-const STEPS = ['Location', 'Details', 'Evidence', 'Review & Submit'];
+// ─── Step label keys (translated at render time) ──────────────────────────────
+const STEP_KEYS = ['Location', 'Details', 'Evidence', 'Review & Submit'];
 
 // ─── Pin dropper ──────────────────────────────────────────────────────────────
 function PinDropper({ onPin, pinPos }) {
@@ -68,6 +70,8 @@ export default function SubmitReport() {
   const navigate       = useNavigate();
   const [searchParams] = useSearchParams();
   const startAnon      = searchParams.get('anonymous') === 'true';
+  const { t }          = useTranslation();
+  const { theme, toggleTheme, tileUrl, attribution } = useMapTheme();
 
   // ── Stepper ───────────────────────────────────────────────────────────────
   const [active, setActive] = useState(0);
@@ -83,7 +87,7 @@ export default function SubmitReport() {
   const [file,        setFile]        = useState(null);
   const [preview,     setPreview]     = useState(null);
   const [isDuplicate, setIsDuplicate] = useState(false);   // FR-09 flag
-  const [severity,    setSeverity]    = useState(null);    // FR-08 score 1-5
+  const [severity,    setSeverity]    = useState(null);    // FR-08 score 1-10
 
   // ── Loading / error ───────────────────────────────────────────────────────
   const [aiCatLoading,  setAiCatLoading]  = useState(false);
@@ -317,13 +321,13 @@ export default function SubmitReport() {
     // ── Step 0: Location ─────────────────────────────────────────────────────
     <Stack key="loc" gap="md">
       <Text size="sm" c="dimmed">
-        Click anywhere on the map to drop a pin at the issue location.
+        {t('Click anywhere on the map to drop a pin at the issue location.')}
       </Text>
 
       {!pin && (
         <Alert icon={<IconMapPin size={15} />} color="yellow" variant="light" radius="md"
           style={{ border: '1px solid rgba(255,210,0,0.2)' }}>
-          No location selected — click the map to place your pin.
+          {t('No location selected — click the map to place your pin.')}
         </Alert>
       )}
 
@@ -346,24 +350,24 @@ export default function SubmitReport() {
         </Alert>
       )}
 
-      <Box style={{ height: 380, borderRadius: 8, overflow: 'hidden', border: `1px solid ${BORDER}` }}>
+      <Box style={{ height: 380, borderRadius: 8, overflow: 'hidden', border: `1px solid ${BORDER}`, position: 'relative' }}>
         <MapContainer center={[23.8103, 90.4125]} zoom={13}
           style={{ height: '100%', width: '100%' }} zoomControl>
-          <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-          />
+          <TileLayer url={tileUrl} attribution={attribution} />
           <PinDropper onPin={handlePin} pinPos={pin} />
         </MapContainer>
+        <Box style={{ position: 'absolute', top: 8, right: 8, zIndex: 1000 }}>
+          <MapThemeToggle theme={theme} onToggle={toggleTheme} />
+        </Box>
       </Box>
 
       {/* Helper text — FR-09 */}
       <Text size="xs" c="dimmed" ta="center" style={{ fontStyle: 'italic' }}>
-        We'll check for nearby duplicate reports automatically.
+        {t("We'll check for nearby duplicate reports automatically.")}
       </Text>
 
       <Switch
-        label="Submit anonymously"
+        label={t('Submit anonymously')}
         checked={anonymous}
         onChange={e => setAnonymous(e.currentTarget.checked)}
         color="civic"
@@ -374,7 +378,7 @@ export default function SubmitReport() {
     // ── Step 1: Details ───────────────────────────────────────────────────────
     <Stack key="det" gap="md">
       <TextInput
-        label="Report title"
+        label={t('Report title')}
         placeholder="e.g. Large pothole on Main Street near Bus Stop 12"
         value={title}
         onChange={e => setTitle(e.currentTarget.value)}
@@ -382,8 +386,8 @@ export default function SubmitReport() {
         description="Keep it short and specific — min. 5 characters"
       />
       <Textarea
-        label="Description"
-        placeholder="Describe the issue in detail — the AI will auto-categorize it..."
+        label={t('Description')}
+        placeholder={t('Describe the issue in detail — the AI will auto-categorize it...')}
         value={description}
         onChange={e => setDescription(e.currentTarget.value)}
         onBlur={handleDescriptionBlur}
@@ -406,7 +410,7 @@ export default function SubmitReport() {
     // ── Step 2: Evidence + AI Severity (FR-08) ────────────────────────────────
     <Stack key="ev" gap="md">
       <Text size="sm" c="dimmed">
-        Upload a photo or short video as evidence. (Optional but recommended)
+        {t('Upload a photo or short video as evidence. (Optional but recommended)')}
       </Text>
 
       <Card p="xl" radius="md"
@@ -469,12 +473,12 @@ export default function SubmitReport() {
               <IconUpload size={24} />
             </ThemeIcon>
             <Text size="sm" c="dimmed">
-              Image or video evidence (JPG, PNG, MP4 · max 10MB)
+              {t('Image or video evidence (JPG, PNG, MP4 · max 10MB)')}
             </Text>
             <FileButton onChange={handleFile} accept="image/*,video/*">
               {(props) => (
                 <Button {...props} size="xs" variant="outline" color="civic" radius="md">
-                  Choose file
+                  {t('Choose file')}
                 </Button>
               )}
             </FileButton>
@@ -545,7 +549,7 @@ export default function SubmitReport() {
         onClick={handleSubmit}
         style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, boxShadow: `0 0 20px rgba(0,255,65,0.25)` }}
       >
-        Submit Report
+        {t('Submit Report')}
       </Button>
     </Stack>,
   ];
@@ -554,10 +558,10 @@ export default function SubmitReport() {
     <Box maw={720} mx="auto">
       <Title order={2} mb={4}
         style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#fff', letterSpacing: '-0.02em' }}>
-        Submit a Report
+        {t('Submit a Report')}
       </Title>
       <Text size="sm" c="dimmed" mb="xl">
-        Complete all four steps to submit your civic issue report.
+        {t('Complete all four steps to submit your civic issue report.')}
       </Text>
 
       {/* Offline banner */}
@@ -565,7 +569,7 @@ export default function SubmitReport() {
         <Alert icon={<IconAlertCircle size={15} />} color="orange" variant="light" radius="md" mb="md"
           style={{ border: '1px solid rgba(251,146,60,0.3)' }}>
           <Text size="xs" fw={600} c="orange.3">
-            You're offline — your report will be saved as a draft and submitted when you're back online.
+            {t("You're offline")} — {t("Report saved as draft and will sync when you're back online.")}
           </Text>
         </Alert>
       )}
@@ -601,11 +605,11 @@ export default function SubmitReport() {
           },
         }}
       >
-        {STEPS.map((label, i) => (
+        {STEP_KEYS.map((key, i) => (
           <Stepper.Step
-            key={label}
-            label={label}
-            description={`Step ${i + 1} of ${STEPS.length}`}
+            key={key}
+            label={t(key)}
+            description={`${i + 1} / ${STEP_KEYS.length}`}
           />
         ))}
       </Stepper>
@@ -623,20 +627,19 @@ export default function SubmitReport() {
             leftSection={<IconArrowLeft size={15} />}
             disabled={active === 0}
             onClick={() => setActive(a => a - 1)}>
-            Back
+            {t('Back')}
           </Button>
-          {/* Save Draft button — available on every step */}
           <Button variant="subtle" color="gray" radius="md" size="sm"
             onClick={saveDraft}>
-            Save Draft
+            {t('Save as Draft')}
           </Button>
         </Group>
-        {active < STEPS.length - 1 && (
+        {active < STEP_KEYS.length - 1 && (
           <Button color="civic" radius="md" size="sm"
             rightSection={<IconArrowRight size={15} />}
             disabled={(active === 0 && !canGoStep2) || (active === 1 && !canGoStep3)}
             onClick={() => setActive(a => a + 1)}>
-            Continue
+            {t('Continue')}
           </Button>
         )}
       </Group>
@@ -756,6 +759,31 @@ export default function SubmitReport() {
                 {createdReport._id}
               </Text>
             </Text>
+          )}
+          {createdReport?.qrCode && (
+            <Box style={{ textAlign: 'center' }}>
+              <Text size="xs" c="dimmed" mb={8} tt="uppercase" fw={600} style={{ letterSpacing: '0.06em' }}>
+                QR Code — scan to view or share
+              </Text>
+              <Box
+                style={{
+                  display: 'inline-block',
+                  background: '#fff',
+                  borderRadius: 8,
+                  padding: 8,
+                  boxShadow: `0 0 0 1px ${GREEN_BDR}`,
+                }}
+              >
+                <img
+                  src={createdReport.qrCode}
+                  alt="Report QR Code"
+                  style={{ width: 160, height: 160, display: 'block' }}
+                />
+              </Box>
+              <Text size="xs" c="dimmed" mt={6}>
+                Stick this near the issue as physical proof
+              </Text>
+            </Box>
           )}
           <Group>
             {createdReport?._id && (

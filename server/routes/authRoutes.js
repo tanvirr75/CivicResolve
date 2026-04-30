@@ -1,7 +1,8 @@
 const express = require('express');
 const { body }  = require('express-validator');
-const { register, login, getMe, logout, getFieldWorkers, getUsers, updateUserRole, toggleUserActive, resetUserPassword, changePassword } = require('../controllers/authController');
+const { register, login, getMe, logout, getFieldWorkers, getUsers, updateUserRole, toggleUserActive, resetUserPassword, changePassword, uploadAvatar, getSettings, updateSettings } = require('../controllers/authController');
 const { authenticate, authorize } = require('../middleware/authenticate');
+const { uploadSingle } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -131,5 +132,14 @@ router.put('/users/:id/reset-password', authenticate, authorize('system_admin'),
 
 // PUT /api/auth/change-password — change own password (any authenticated user)
 router.put('/change-password', authenticate, changePassword);
+
+// PUT /api/auth/avatar — upload profile picture
+router.put('/avatar', authenticate, uploadSingle('avatar'), uploadAvatar);
+
+// GET /api/auth/settings — get user settings
+router.get('/settings', authenticate, getSettings);
+
+// PUT /api/auth/settings — update one or more settings keys
+router.put('/settings', authenticate, updateSettings);
 
 module.exports = router;

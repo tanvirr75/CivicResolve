@@ -10,6 +10,8 @@ import {
   IconArrowLeft, IconDownload, IconUpload, IconCircleCheck,
   IconAlertCircle, IconX, IconChevronRight,
 } from '@tabler/icons-react';
+import { useMapTheme } from '../../hooks/useMapTheme';
+import MapThemeToggle from '../../components/MapThemeToggle';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import API from '../../services/api';
@@ -36,6 +38,7 @@ const inputSm = {
 export default function WorkOrderDetail() {
   const { id }       = useParams();
   const navigate     = useNavigate();
+  const { theme, toggleTheme, tileUrl, attribution } = useMapTheme();
 
   const [order,      setOrder]      = useState(null);
   const [loading,    setLoading]    = useState(true);
@@ -213,16 +216,18 @@ export default function WorkOrderDetail() {
         <Stack gap="lg" style={{ flex: 2, minWidth: 300 }}>
           {lat && lng && (
             <Card p={0} radius="md" style={{ border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
-              <MapContainer
-                center={[lat, lng]} zoom={15} zoomControl={false}
-                style={{ height: 220, width: '100%' }}
-              >
-                <TileLayer
-                  url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                  attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-                />
-                <Marker position={[lat, lng]} />
-              </MapContainer>
+              <Box style={{ position: 'relative' }}>
+                <MapContainer
+                  center={[lat, lng]} zoom={15} zoomControl={false}
+                  style={{ height: 220, width: '100%' }}
+                >
+                  <TileLayer url={tileUrl} attribution={attribution} />
+                  <Marker position={[lat, lng]} />
+                </MapContainer>
+                <Box style={{ position: 'absolute', top: 8, right: 8, zIndex: 1000 }}>
+                  <MapThemeToggle theme={theme} onToggle={toggleTheme} />
+                </Box>
+              </Box>
               <Box p="sm">
                 <Group gap={6}>
                   <Text size="xs" c="dimmed">Coordinates:</Text>

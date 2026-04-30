@@ -13,10 +13,13 @@ import {
   IconBrandFacebook, IconBrandTwitter, IconBrandWhatsapp,
   IconAlertCircle, IconCircleCheck, IconSend,
 } from '@tabler/icons-react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { motion, AnimatePresence } from 'framer-motion';
 import API from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { useMapTheme } from '../hooks/useMapTheme';
+import MapThemeToggle from '../components/MapThemeToggle';
 
 // ── Leaflet icon fix ──────────────────────────────────────────────────────────
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -49,6 +52,7 @@ const upvoteKey = (id) => `cr_upvoted_${id}`;
 
 // ─── Map: non-interactive ─────────────────────────────────────────────────────
 function StaticMap({ lat, lng }) {
+  const { theme, toggleTheme, tileUrl, attribution } = useMapTheme();
   function Disabler() {
     const map = useMap();
     useEffect(() => {
@@ -60,19 +64,21 @@ function StaticMap({ lat, lng }) {
     return null;
   }
   return (
-    <MapContainer
-      center={[lat, lng]}
-      zoom={15}
-      zoomControl={false}
-      style={{ height: '100%', width: '100%' }}
-    >
-      <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-        attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-      />
-      <Marker position={[lat, lng]} />
-      <Disabler />
-    </MapContainer>
+    <Box style={{ position: 'relative', height: '100%', width: '100%' }}>
+      <MapContainer
+        center={[lat, lng]}
+        zoom={15}
+        zoomControl={false}
+        style={{ height: '100%', width: '100%' }}
+      >
+        <TileLayer url={tileUrl} attribution={attribution} />
+        <Marker position={[lat, lng]} />
+        <Disabler />
+      </MapContainer>
+      <Box style={{ position: 'absolute', top: 8, right: 8, zIndex: 1000 }}>
+        <MapThemeToggle theme={theme} onToggle={toggleTheme} />
+      </Box>
+    </Box>
   );
 }
 
@@ -153,6 +159,7 @@ const COMMENTS_PER_PAGE = 10;
 export default function PublicReportDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [report, setReport] = useState(null);
@@ -196,6 +203,7 @@ export default function PublicReportDetail() {
 
   // ── Upvote ────────────────────────────────────────────────────────────────
   const handleUpvote = async () => {
+    if (!isAuthenticated()) return;
     if (upvoted || upvoting) return;
     setUpvoting(true);
     try {
@@ -210,12 +218,8 @@ export default function PublicReportDetail() {
         color: 'civic',
         autoClose: 3000,
       });
-    } catch (err) {
-      if (err.response?.status === 401) {
-        notifications.show({ title: 'Login required', message: 'Please log in to upvote this report.', color: 'orange', autoClose: 3000 });
-      } else {
-        notifications.show({ title: 'Already voted', message: 'You can only upvote once per report.', color: 'orange', autoClose: 2500 });
-      }
+    } catch {
+      notifications.show({ title: 'Already voted', message: 'You can only upvote once per report.', color: 'orange', autoClose: 2500 });
     } finally {
       setUpvoting(false);
     }
@@ -425,27 +429,60 @@ export default function PublicReportDetail() {
               {/* ── Upvote section ────────────────────────────────────────── */}
               <Card p="lg" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
                 <Group align="center" gap="lg">
-                  <motion.div whileTap={{ scale: 0.92 }}>
-                    <Button
-                      size="lg"
-                      radius="xl"
-                      loading={upvoting}
-                      disabled={upvoted}
-                      onClick={handleUpvote}
-                      leftSection={<IconThumbUp size={20} />}
-                      style={{
-                        background: upvoted ? GREEN_DIM : GREEN,
-                        color: upvoted ? GREEN : '#000',
-                        border: upvoted ? `1px solid ${GREEN_BDR}` : 'none',
-                        fontFamily: "'Space Grotesk', sans-serif",
-                        fontWeight: 700,
-                        boxShadow: upvoted ? 'none' : `0 0 24px rgba(0,255,65,0.30)`,
-                        transition: 'all .2s',
-                      }}
-                    >
-                      {upvoted ? 'Upvoted' : 'Upvote'}
-                    </Button>
-                  </motion.div>
+                  {isAuthenticated() ? (
+                    <motion.div whileTap={{ scale: 0.92 }}>
+                      <Button
+                        size="lg"
+                        radius="xl"
+                        loading={upvoting}
+                        disabled={upvoted}
+                        onClick={handleUpvote}
+                        leftSection={<IconThumbUp size={20} />}
+                        style={{
+                          background: upvoted ? GREEN_DIM : GREEN,
+                          color: upvoted ? GREEN : '#000',
+                          border: upvoted ? `1px solid ${GREEN_BDR}` : 'none',
+                          fontFamily: "'Space Grotesk', sans-serif",
+                          fontWeight: 700,
+                          boxShadow: upvoted ? 'none' : `0 0 24px rgba(0,255,65,0.30)`,
+                          transition: 'all .2s',
+                        }}
+                      >
+                        {upvoted ? 'Upvoted' : 'Upvote'}
+                      </Button>
+                    </motion.div>
+                  ) : (
+                    <Stack gap={6}>
+                      <Group gap="xs">
+                        <IconThumbUp size={16} color="#555" />
+                        <Text size="sm" c="dimmed">Want to upvote this issue?</Text>
+                      </Group>
+                      <Group gap="xs">
+                        <Button
+                          component={Link}
+                          to="/login"
+                          size="xs"
+                          radius="md"
+                          color="civic"
+                          style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }}
+                        >
+                          Login to upvote
+                        </Button>
+                        <Text size="xs" c="dimmed">or</Text>
+                        <Button
+                          component={Link}
+                          to="/register"
+                          size="xs"
+                          radius="md"
+                          variant="subtle"
+                          color="civic"
+                          style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                        >
+                          Register
+                        </Button>
+                      </Group>
+                    </Stack>
+                  )}
                   <Box>
                     <Title order={3}
                       style={{ fontFamily: "'Space Grotesk', sans-serif", color: upvoted ? GREEN : '#fff', letterSpacing: '-0.02em' }}>

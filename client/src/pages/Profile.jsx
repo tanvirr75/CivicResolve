@@ -1,99 +1,145 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Box, Card, Title, Text, TextInput, Button, Group, Stack,
-  RingProgress, Avatar, Badge, SimpleGrid, Divider,
-  PasswordInput, Collapse,
+  RingProgress, Avatar, Badge, SimpleGrid, Divider, Select,
+  PasswordInput, Collapse, ThemeIcon, Overlay, ActionIcon,
+  Tooltip,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import {
-  IconUserEdit, IconCheck, IconDeviceFloppy, IconKey, IconChevronDown,
+  IconUserEdit, IconCheck, IconDeviceFloppy, IconKey,
+  IconChevronDown, IconCamera, IconMapPin, IconBriefcase,
+  IconShield, IconCalendar, IconPhone, IconMail, IconId,
+  IconBuildingSkyscraper, IconTruck, IconClock,
 } from '@tabler/icons-react';
 import { useAuth } from '../context/AuthContext';
 import API from '../services/api';
 
-const GREEN = '#00FF41';
-const CARD_BG = 'rgba(255,255,255,0.03)';
-const BORDER = 'rgba(255,255,255,0.08)';
+const GREEN     = '#00FF41';
+const GREEN_DIM = 'rgba(0,255,65,0.08)';
+const GREEN_BDR = 'rgba(0,255,65,0.20)';
+const CARD_BG   = 'rgba(255,255,255,0.03)';
+const BORDER    = 'rgba(255,255,255,0.07)';
 
 const inputStyles = {
   input: { background: 'rgba(255,255,255,0.04)', border: `1px solid ${BORDER}`, color: '#e5e5e5' },
   label: { color: '#aaa', fontSize: '0.82rem', fontWeight: 500, marginBottom: 6 },
 };
 
-export default function Profile() {
-  const { user, login } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [profileData, setProfileData] = useState(user || {});
+const ROLE_LABEL = {
+  citizen:      'Citizen',
+  ward_official:'Ward Official',
+  field_worker: 'Field Worker',
+  system_admin: 'System Admin',
+};
 
-  // ── Change password state ──────────────────────────────────────────────────
-  const [showPwChange, setShowPwChange] = useState(false);
-  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
-  const [pwLoading, setPwLoading] = useState(false);
+const ROLE_COLOR = {
+  citizen:      'civic',
+  ward_official:'blue',
+  field_worker: 'yellow',
+  system_admin: 'red',
+};
+
+// ─── Small read-only info row ─────────────────────────────────────────────────
+function InfoRow({ icon: Icon, label, value }) {
+  if (!value) return null;
+  return (
+    <Group gap="sm" py={6} style={{ borderBottom: `1px solid ${BORDER}` }}>
+      <ThemeIcon size={28} radius="md" style={{ background: GREEN_DIM, border: `1px solid ${GREEN_BDR}`, color: GREEN, flexShrink: 0 }}>
+        <Icon size={14} />
+      </ThemeIcon>
+      <Box style={{ flex: 1, minWidth: 0 }}>
+        <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: '0.05em' }}>{label}</Text>
+        <Text size="sm" c="white" fw={500} style={{ wordBreak: 'break-word' }}>{value}</Text>
+      </Box>
+    </Group>
+  );
+}
+
+export default function Profile() {
+  const { user, setUser } = useAuth();
+  const [loading,        setLoading]        = useState(false);
+  const [avatarLoading,  setAvatarLoading]  = useState(false);
+  const [avatarPreview,  setAvatarPreview]  = useState(null);
+  const [showPwChange,   setShowPwChange]   = useState(false);
+  const [pwForm,         setPwForm]         = useState({ current: '', next: '', confirm: '' });
+  const [pwLoading,      setPwLoading]      = useState(false);
+  const fileInputRef = useRef(null);
+
+  const role = user?.role ?? 'citizen';
 
   const form = useForm({
     initialValues: {
-      name:             user?.name || '',
-      phone:            user?.phone || '',
+      name:             user?.name             || '',
+      phone:            user?.phone            || '',
       dob:              user?.dob ? new Date(user.dob).toISOString().split('T')[0] : '',
-      bloodGroup:       user?.bloodGroup || '',
-      nationality:      user?.nationality || '',
-      address:          user?.address || '',
-      nid:              user?.nid || '',
+      bloodGroup:       user?.bloodGroup       || '',
+      nationality:      user?.nationality      || '',
+      address:          user?.address          || '',
+      nid:              user?.nid              || '',
       emergencyContact: user?.emergencyContact || '',
-      officeAddress:    user?.officeAddress || '',
-      contactNumber:    user?.contactNumber || '',
-      vehicleType:      user?.vehicleType || '',
-      workingHours:     user?.workingHours || '',
+      // ward_official
+      jurisdiction:     user?.jurisdiction     || '',
+      officeAddress:    user?.officeAddress    || '',
+      contactNumber:    user?.contactNumber    || '',
+      // field_worker
+      expertise:        user?.expertise        || '',
+      vehicleType:      user?.vehicleType      || '',
+      workingHours:     user?.workingHours     || '',
+      // system_admin
+      adminLevel:       user?.adminLevel       || '',
+      accessScope:      user?.accessScope      || '',
     },
   });
 
   useEffect(() => {
-    if (user) setProfileData(user);
+    if (user) setAvatarPreview(user.avatar || null);
   }, [user]);
 
+  // ── Avatar upload ─────────────────────────────────────────────────────────
+  const handleAvatarChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarPreview(URL.createObjectURL(file));
+    setAvatarLoading(true);
+    const fd = new FormData();
+    fd.append('avatar', file);
+    try {
+      const res = await API.put('/auth/avatar', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setUser(res.data.data.user);
+      notifications.show({ title: 'Avatar updated', color: 'teal', icon: <IconCheck size={16} /> });
+    } catch {
+      notifications.show({ title: 'Upload failed', message: 'Could not upload image.', color: 'red' });
+      setAvatarPreview(user?.avatar || null);
+    } finally {
+      setAvatarLoading(false);
+    }
+  };
+
+  // ── Profile save ──────────────────────────────────────────────────────────
   const handleSubmit = async (values) => {
     setLoading(true);
     try {
       const res = await API.put('/auth/profile', values);
-      const updatedUser = res.data.data.user;
-      setProfileData(updatedUser);
-      const token = localStorage.getItem('civic_token');
-      login(token, updatedUser);
-      notifications.show({
-        title: 'Profile Updated',
-        message: 'Your information has been saved successfully.',
-        color: 'teal',
-        icon: <IconCheck size={16} />,
-      });
+      setUser(res.data.data.user);
+      notifications.show({ title: 'Profile Updated', message: 'Changes saved.', color: 'teal', icon: <IconCheck size={16} /> });
     } catch (err) {
-      notifications.show({
-        title: 'Error',
-        message: err.response?.data?.message || 'Failed to update profile',
-        color: 'red',
-      });
+      notifications.show({ title: 'Error', message: err.response?.data?.message || 'Failed to update profile', color: 'red' });
     } finally {
       setLoading(false);
     }
   };
 
+  // ── Password change ───────────────────────────────────────────────────────
   const handleChangePassword = async () => {
-    if (!pwForm.current) {
-      notifications.show({ title: 'Required', message: 'Enter your current password.', color: 'orange' });
-      return;
-    }
-    if (pwForm.next.length < 8) {
-      notifications.show({ title: 'Too short', message: 'New password must be at least 8 characters.', color: 'orange' });
-      return;
-    }
-    if (pwForm.next !== pwForm.confirm) {
-      notifications.show({ title: 'Mismatch', message: 'New passwords do not match.', color: 'red' });
-      return;
-    }
+    if (!pwForm.current) { notifications.show({ title: 'Required', message: 'Enter your current password.', color: 'orange' }); return; }
+    if (pwForm.next.length < 8) { notifications.show({ title: 'Too short', message: 'Min. 8 characters.', color: 'orange' }); return; }
+    if (pwForm.next !== pwForm.confirm) { notifications.show({ title: 'Mismatch', message: 'New passwords do not match.', color: 'red' }); return; }
     setPwLoading(true);
     try {
       await API.put('/auth/change-password', { currentPassword: pwForm.current, newPassword: pwForm.next });
-      notifications.show({ title: 'Password changed ✓', message: 'Your password has been updated.', color: 'teal', autoClose: 3000 });
+      notifications.show({ title: 'Password changed', color: 'teal', autoClose: 3000 });
       setPwForm({ current: '', next: '', confirm: '' });
       setShowPwChange(false);
     } catch (err) {
@@ -103,138 +149,258 @@ export default function Profile() {
     }
   };
 
-  const completeness = profileData?.profileCompleteness || 30;
+  const completeness = user?.profileCompleteness || 0;
   const ringColor = completeness === 100 ? GREEN : completeness >= 60 ? '#f59e0b' : '#ef4444';
 
   return (
-    <Box maw={900} mx="auto" p="md">
-      <Group align="flex-end" mb="xl">
-        <Avatar size={80} radius="xl" color="civic">
-          {profileData?.name?.[0]?.toUpperCase() || 'U'}
-        </Avatar>
-        <Box style={{ flex: 1 }}>
-          <Title order={2} style={{ color: '#fff', fontFamily: "'Space Grotesk', sans-serif" }}>
-            {profileData?.name}
-          </Title>
-          <Text c="dimmed">
-            {profileData?.email} • <Badge color="civic" variant="outline">{profileData?.role}</Badge>
-          </Text>
-        </Box>
-      </Group>
+    <Box maw={960} mx="auto" p="md" pb={80}>
 
-      {/* ── Profile completeness ring ──────────────────────────────────────── */}
-      <Card p="lg" radius="md" mb="xl" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
-        <Group gap="xl" align="center">
-          <RingProgress
-            size={110}
-            thickness={9}
-            roundCaps
-            sections={[{ value: completeness, color: ringColor }]}
-            label={
-              <Text ta="center" fw={800} size="sm" style={{ color: ringColor, fontFamily: "'Space Grotesk', sans-serif" }}>
-                {completeness}%
-              </Text>
-            }
-          />
-          <Box style={{ flex: 1 }}>
-            <Text size="sm" fw={700} c="white" mb={4} style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-              Profile Completeness
-            </Text>
-            <Text size="xs" c="dimmed" lh={1.6}>
-              {completeness === 100
-                ? 'Your profile is fully complete. All platform features are unlocked.'
-                : 'Fill in more profile fields to unlock the full platform experience and improve civic report credibility.'}
-            </Text>
-            {completeness < 100 && (
-              <Text size="xs" mt={8} style={{ color: ringColor, fontWeight: 600 }}>
-                {100 - completeness}% remaining
-              </Text>
+      {/* ── Hero card ────────────────────────────────────────────────────── */}
+      <Card p="xl" radius="md" mb="xl"
+        style={{ background: CARD_BG, border: `1px solid ${BORDER}`, borderTop: `3px solid ${GREEN}` }}>
+        <Group gap="xl" align="flex-start" wrap="nowrap">
+
+          {/* Avatar with upload overlay */}
+          <Box style={{ position: 'relative', flexShrink: 0 }}>
+            <Avatar
+              src={avatarPreview}
+              size={100}
+              radius="xl"
+              color="civic"
+              style={{ border: `2px solid ${GREEN_BDR}`, cursor: 'pointer' }}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {!avatarPreview && (user?.name?.[0]?.toUpperCase() || 'U')}
+            </Avatar>
+            {avatarLoading && (
+              <Overlay color="#000" backgroundOpacity={0.6} radius="xl" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Text size="xs" c="white">...</Text>
+              </Overlay>
             )}
+            <Tooltip label="Change photo" withArrow>
+              <ActionIcon
+                size="sm" radius="xl" variant="filled"
+                style={{ position: 'absolute', bottom: 2, right: 2, background: GREEN, color: '#000' }}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <IconCamera size={12} stroke={2.5} />
+              </ActionIcon>
+            </Tooltip>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              style={{ display: 'none' }}
+              onChange={handleAvatarChange}
+            />
+          </Box>
+
+          {/* Identity info */}
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <Group gap="sm" mb={4} align="center">
+              <Title order={2} style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#fff', letterSpacing: '-0.02em' }}>
+                {user?.name}
+              </Title>
+              <Badge color={ROLE_COLOR[role]} variant="light" size="sm">
+                {ROLE_LABEL[role]}
+              </Badge>
+            </Group>
+            <Group gap="lg" wrap="wrap">
+              <Group gap="xs">
+                <IconMail size={13} color="#666" />
+                <Text size="sm" c="dimmed">{user?.email}</Text>
+              </Group>
+              {user?.phone && (
+                <Group gap="xs">
+                  <IconPhone size={13} color="#666" />
+                  <Text size="sm" c="dimmed">{user.phone}</Text>
+                </Group>
+              )}
+              {user?.wardId && (
+                <Group gap="xs">
+                  <IconMapPin size={13} color="#666" />
+                  <Text size="sm" c="dimmed">Ward {user.wardId}</Text>
+                </Group>
+              )}
+              {user?.createdAt && (
+                <Group gap="xs">
+                  <IconCalendar size={13} color="#666" />
+                  <Text size="sm" c="dimmed">
+                    Member since {new Date(user.createdAt).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
+                  </Text>
+                </Group>
+              )}
+            </Group>
+          </Box>
+
+          {/* Completeness ring */}
+          <Box style={{ flexShrink: 0, textAlign: 'center' }}>
+            <RingProgress
+              size={90}
+              thickness={7}
+              roundCaps
+              sections={[{ value: completeness, color: ringColor }]}
+              label={
+                <Text ta="center" fw={800} size="xs" style={{ color: ringColor, fontFamily: "'Space Grotesk', sans-serif" }}>
+                  {completeness}%
+                </Text>
+              }
+            />
+            <Text size="xs" c="dimmed" mt={4}>Profile</Text>
           </Box>
         </Group>
       </Card>
 
-      {/* ── Personal information form ─────────────────────────────────────── */}
-      <Card p="xl" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
-        <Group mb="lg">
-          <IconUserEdit size={20} color={GREEN} />
-          <Title order={4} style={{ color: '#fff', fontFamily: "'Space Grotesk', sans-serif" }}>
-            Personal Information
-          </Title>
-        </Group>
+      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xl" mb="xl">
 
-        <form onSubmit={form.onSubmit(handleSubmit)}>
-          <Stack gap="md">
-            <SimpleGrid cols={{ base: 1, sm: 2 }}>
-              <TextInput label="Full Name" {...form.getInputProps('name')} required styles={inputStyles} />
-              <TextInput label="Phone Number" {...form.getInputProps('phone')} styles={inputStyles} />
-              <TextInput label="Date of Birth" type="date" {...form.getInputProps('dob')} styles={inputStyles} />
-              <TextInput label="Blood Group" {...form.getInputProps('bloodGroup')} styles={inputStyles} />
-              <TextInput label="Nationality" {...form.getInputProps('nationality')} styles={inputStyles} />
+        {/* ── Personal Information ────────────────────────────────────────── */}
+        <Card p="xl" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+          <Group gap="sm" mb="lg">
+            <IconUserEdit size={18} color={GREEN} />
+            <Title order={5} style={{ color: '#fff', fontFamily: "'Space Grotesk', sans-serif" }}>Personal Information</Title>
+          </Group>
+          <form id="profile-form" onSubmit={form.onSubmit(handleSubmit)}>
+            <Stack gap="sm">
+              <TextInput label="Full Name"         {...form.getInputProps('name')} required styles={inputStyles} />
+              <TextInput label="Phone Number"      {...form.getInputProps('phone')} styles={inputStyles} />
+              <TextInput label="Date of Birth"     type="date" {...form.getInputProps('dob')} styles={inputStyles} />
+              <SimpleGrid cols={2} spacing="sm">
+                <TextInput label="Blood Group"     {...form.getInputProps('bloodGroup')} styles={inputStyles} />
+                <TextInput label="Nationality"     {...form.getInputProps('nationality')} styles={inputStyles} />
+              </SimpleGrid>
               <TextInput label="National ID (NID)" {...form.getInputProps('nid')} styles={inputStyles} />
-              <TextInput label="Emergency Contact" {...form.getInputProps('emergencyContact')} styles={inputStyles} />
-            </SimpleGrid>
-            <TextInput label="Full Address" {...form.getInputProps('address')} styles={inputStyles} />
+              <TextInput label="Emergency Contact" {...form.getInputProps('emergencyContact')} placeholder="Name & phone" styles={inputStyles} />
+              <TextInput label="Full Address"      {...form.getInputProps('address')} styles={inputStyles} />
+            </Stack>
+          </form>
+        </Card>
 
-            {profileData?.role === 'ward_official' && (
+        {/* ── Role-specific info ──────────────────────────────────────────── */}
+        <Stack gap="xl">
+          <Card p="xl" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+            {role === 'citizen' && (
               <>
-                <Divider my="md" label="Ward Official Info" labelPosition="center" color={BORDER} />
-                <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                  <TextInput label="Office Address" {...form.getInputProps('officeAddress')} styles={inputStyles} />
-                  <TextInput label="Office Contact Number" {...form.getInputProps('contactNumber')} styles={inputStyles} />
-                </SimpleGrid>
+                <Group gap="sm" mb="lg">
+                  <IconId size={18} color={GREEN} />
+                  <Title order={5} style={{ color: '#fff', fontFamily: "'Space Grotesk', sans-serif" }}>Citizen Identity</Title>
+                </Group>
+                <Stack gap="xs">
+                  <InfoRow icon={IconMail}     label="Email"     value={user?.email} />
+                  <InfoRow icon={IconCalendar} label="Joined"    value={user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : null} />
+                  <InfoRow icon={IconMapPin}   label="Address"   value={user?.address} />
+                </Stack>
               </>
             )}
 
-            {profileData?.role === 'field_worker' && (
+            {role === 'ward_official' && (
               <>
-                <Divider my="md" label="Field Worker Info" labelPosition="center" color={BORDER} />
-                <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                  <TextInput label="Vehicle Type (e.g. Truck, Van)" {...form.getInputProps('vehicleType')} styles={inputStyles} />
-                  <TextInput label="Working Hours" {...form.getInputProps('workingHours')} styles={inputStyles} />
-                </SimpleGrid>
+                <Group gap="sm" mb="lg">
+                  <IconBuildingSkyscraper size={18} color={GREEN} />
+                  <Title order={5} style={{ color: '#fff', fontFamily: "'Space Grotesk', sans-serif" }}>Ward Assignment</Title>
+                </Group>
+                <Stack gap="xs" mb="lg">
+                  <InfoRow icon={IconMapPin}   label="Ward ID"      value={user?.wardId} />
+                  <InfoRow icon={IconMapPin}   label="Jurisdiction" value={user?.jurisdiction} />
+                  <InfoRow icon={IconPhone}    label="Office Phone" value={user?.contactNumber} />
+                </Stack>
+                <Divider color={BORDER} my="sm" />
+                <Stack gap="sm" mt="sm">
+                  <TextInput label="Jurisdiction / Area Name" form="profile-form" {...form.getInputProps('jurisdiction')} styles={inputStyles} />
+                  <TextInput label="Office Address"           form="profile-form" {...form.getInputProps('officeAddress')} styles={inputStyles} />
+                  <TextInput label="Office Contact Number"    form="profile-form" {...form.getInputProps('contactNumber')} styles={inputStyles} />
+                </Stack>
               </>
             )}
 
-            <Button
-              type="submit"
-              color="civic"
-              loading={loading}
-              leftSection={<IconDeviceFloppy size={16} />}
-              mt="xl"
-              style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }}
-            >
-              Save Profile Changes
-            </Button>
-          </Stack>
-        </form>
+            {role === 'field_worker' && (
+              <>
+                <Group gap="sm" mb="lg">
+                  <IconTruck size={18} color={GREEN} />
+                  <Title order={5} style={{ color: '#fff', fontFamily: "'Space Grotesk', sans-serif" }}>Work Details</Title>
+                </Group>
+                <Stack gap="xs" mb="lg">
+                  <InfoRow icon={IconId}      label="Employee ID"  value={user?.employeeId} />
+                  <InfoRow icon={IconBriefcase} label="Expertise"  value={user?.expertise} />
+                  <InfoRow icon={IconTruck}   label="Vehicle"      value={user?.vehicleType} />
+                  <InfoRow icon={IconClock}   label="Working Hours" value={user?.workingHours} />
+                </Stack>
+                <Divider color={BORDER} my="sm" />
+                <Stack gap="sm" mt="sm">
+                  <TextInput label="Area of Expertise"   form="profile-form" {...form.getInputProps('expertise')} placeholder="e.g. Drainage, Electrical" styles={inputStyles} />
+                  <SimpleGrid cols={2} spacing="sm">
+                    <TextInput label="Vehicle Type"      form="profile-form" {...form.getInputProps('vehicleType')} placeholder="e.g. Truck" styles={inputStyles} />
+                    <TextInput label="Working Hours"     form="profile-form" {...form.getInputProps('workingHours')} placeholder="e.g. 9am–5pm" styles={inputStyles} />
+                  </SimpleGrid>
+                </Stack>
+              </>
+            )}
+
+            {role === 'system_admin' && (
+              <>
+                <Group gap="sm" mb="lg">
+                  <IconShield size={18} color={GREEN} />
+                  <Title order={5} style={{ color: '#fff', fontFamily: "'Space Grotesk', sans-serif" }}>Admin Details</Title>
+                </Group>
+                <Stack gap="xs" mb="lg">
+                  <InfoRow icon={IconShield}   label="Admin Level"  value={user?.adminLevel} />
+                  <InfoRow icon={IconBriefcase} label="Access Scope" value={user?.accessScope} />
+                  <InfoRow icon={IconCalendar} label="Joined"        value={user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : null} />
+                </Stack>
+                <Divider color={BORDER} my="sm" />
+                <Stack gap="sm" mt="sm">
+                  <Select
+                    label="Admin Level"
+                    form="profile-form"
+                    data={['Level 1', 'Level 2', 'Level 3', 'Super Admin']}
+                    {...form.getInputProps('adminLevel')}
+                    styles={inputStyles}
+                    clearable
+                  />
+                  <TextInput label="Access Scope" form="profile-form" {...form.getInputProps('accessScope')} placeholder="e.g. All Wards" styles={inputStyles} />
+                </Stack>
+              </>
+            )}
+          </Card>
+        </Stack>
+      </SimpleGrid>
+
+      {/* ── Save button ───────────────────────────────────────────────────── */}
+      <Card p="lg" radius="md" mb="xl" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+        <Group justify="space-between" align="center">
+          <Box>
+            <Text size="sm" fw={600} c="white">Save Profile Changes</Text>
+            <Text size="xs" c="dimmed">Updates your name, contact info, and role-specific details.</Text>
+          </Box>
+          <Button
+            type="submit"
+            form="profile-form"
+            color="civic"
+            loading={loading}
+            leftSection={<IconDeviceFloppy size={16} />}
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }}
+          >
+            Save Changes
+          </Button>
+        </Group>
       </Card>
 
       {/* ── Change password ───────────────────────────────────────────────── */}
-      <Card p="xl" radius="md" mt="lg" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+      <Card p="xl" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
         <Group
           justify="space-between"
           style={{ cursor: 'pointer', userSelect: 'none' }}
           onClick={() => setShowPwChange(s => !s)}
         >
           <Group gap="sm">
-            <IconKey size={20} color={GREEN} />
-            <Title order={4} style={{ color: '#fff', fontFamily: "'Space Grotesk', sans-serif" }}>
-              Change Password
-            </Title>
+            <IconKey size={18} color={GREEN} />
+            <Title order={5} style={{ color: '#fff', fontFamily: "'Space Grotesk', sans-serif" }}>Change Password</Title>
           </Group>
-          <IconChevronDown
-            size={16}
-            color="#666"
-            style={{
-              transform: showPwChange ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s',
-            }}
-          />
+          <IconChevronDown size={16} color="#666"
+            style={{ transform: showPwChange ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
         </Group>
 
         <Collapse in={showPwChange}>
-          <Stack gap="md" mt="lg">
+          <Stack gap="sm" mt="lg">
             <Divider color={BORDER} />
             <PasswordInput
               label="Current Password"
@@ -243,7 +409,7 @@ export default function Profile() {
               onChange={e => setPwForm(p => ({ ...p, current: e.target.value }))}
               styles={inputStyles}
             />
-            <SimpleGrid cols={{ base: 1, sm: 2 }}>
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
               <PasswordInput
                 label="New Password"
                 placeholder="Min. 8 characters"
@@ -260,20 +426,14 @@ export default function Profile() {
               />
             </SimpleGrid>
             <Group>
-              <Button
-                color="civic"
-                loading={pwLoading}
+              <Button color="civic" loading={pwLoading}
                 disabled={!pwForm.current || !pwForm.next || !pwForm.confirm}
                 onClick={handleChangePassword}
-                style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }}
-              >
+                style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }}>
                 Update Password
               </Button>
-              <Button
-                variant="subtle"
-                color="gray"
-                onClick={() => { setShowPwChange(false); setPwForm({ current: '', next: '', confirm: '' }); }}
-              >
+              <Button variant="subtle" color="gray"
+                onClick={() => { setShowPwChange(false); setPwForm({ current: '', next: '', confirm: '' }); }}>
                 Cancel
               </Button>
             </Group>

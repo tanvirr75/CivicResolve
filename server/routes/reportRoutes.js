@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, query } = require('express-validator');
-const { createReport, getReports, getReportById, toggleUpvote, addComment, getNearbyReports, updateStatus, getMyStats, getAnalytics } = require('../controllers/reportController');
+const { createReport, createAnonReport, getReports, getReportById, toggleUpvote, addComment, getNearbyReports, updateStatus, getMyStats, getAnalytics, getWardPublicStats, getWardAISummary } = require('../controllers/reportController');
 const { authenticate, authorize, optionalAuthenticate } = require('../middleware/authenticate');
 const { uploadSingle }  = require('../middleware/upload');
 
@@ -56,6 +56,15 @@ router.post(
   createReport
 );
 
+// POST /api/reports/anon — public, guest anonymous report (no account required)
+router.post(
+  '/anon',
+  optionalAuthenticate,
+  uploadSingle('image'),
+  createReportValidation,
+  createAnonReport
+);
+
 // GET /api/reports — public, paginated list.
 // optionalAuthenticate: if a ward_official sends their JWT, getReports
 // auto-scopes results to their wardId. Citizens/public get all non-spam reports.
@@ -70,6 +79,12 @@ router.get('/stats', authenticate, getMyStats);
 
 // GET /api/reports/analytics — private, admin-only platform-wide aggregation
 router.get('/analytics', authenticate, authorize('system_admin'), getAnalytics);
+
+// GET /api/reports/ward/summary — private, AI daily briefing for ward official
+router.get('/ward/summary', authenticate, authorize('ward_official', 'system_admin'), getWardAISummary);
+
+// GET /api/reports/ward/:wardId/stats — public, per-ward accountability stats
+router.get('/ward/:wardId/stats', getWardPublicStats);
 
 // GET /api/reports/:id — public, single report
 router.get('/:id', getReportById);

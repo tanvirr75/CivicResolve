@@ -9,6 +9,8 @@ import 'leaflet/dist/leaflet.css';
 import { IconFlame, IconChartPie, IconMap, IconCalendar, IconX } from '@tabler/icons-react';
 import { motion } from 'framer-motion';
 import API from '../../services/api';
+import { useMapTheme } from '../../hooks/useMapTheme';
+import MapThemeToggle from '../../components/MapThemeToggle';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const GREEN     = '#00FF41';
@@ -102,6 +104,7 @@ export default function Analytics() {
   const [analytics, setAnalytics] = useState({ catCounts: [], wardStats: [], heatPoints: [], total: 0 });
   const [loading,   setLoading]   = useState(true);
   const [heatmap,   setHeatmap]   = useState(true);
+  const { theme, toggleTheme, tileUrl, attribution } = useMapTheme();
 
   const [fromDate, setFromDate] = useState('');
   const [toDate,   setToDate]   = useState('');
@@ -218,7 +221,7 @@ export default function Analytics() {
           </Group>
         </motion.div>
 
-        <Box style={{ height: 420 }}>
+        <Box style={{ height: 420, position: 'relative' }}>
           {loading
             ? <Skeleton height={420} radius={0} />
             : (
@@ -228,14 +231,14 @@ export default function Analytics() {
                 zoomControl
                 style={{ height: '100%', width: '100%' }}
               >
-                <TileLayer
-                  url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                  attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-                />
+                <TileLayer url={tileUrl} attribution={attribution} />
                 {heatmap && analytics.heatPoints.length > 0 && <HeatLayer points={analytics.heatPoints} />}
               </MapContainer>
             )
           }
+          <Box style={{ position: 'absolute', top: 8, right: 8, zIndex: 1000 }}>
+            <MapThemeToggle theme={theme} onToggle={toggleTheme} />
+          </Box>
         </Box>
       </Card>
 

@@ -196,7 +196,7 @@ const reportSchema = new mongoose.Schema(
     submittedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      required: false, // null for guest/anonymous submissions
     },
     isAnonymous: {
       type: Boolean,

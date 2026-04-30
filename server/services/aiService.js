@@ -100,14 +100,11 @@ Report Description: "${description}"
 
 Category:`.trim();
 
-  const parts = [prompt];
-  if (imageBase64) {
-    parts.push({
-      inlineData: {
-        data: imageBase64,
-        mimeType: mimeType || 'image/jpeg',
-      },
-    });
+  // Gemini SDK requires text as { text: "..." } Part objects, not bare strings.
+  // Skip image if base64 exceeds ~3.5MB to stay within the inline data limit.
+  const parts = [{ text: prompt }];
+  if (imageBase64 && imageBase64.length < 3_500_000) {
+    parts.push({ inlineData: { data: imageBase64, mimeType: mimeType || 'image/jpeg' } });
   }
 
   const raw = await _runPrompt(parts);
@@ -145,15 +142,9 @@ Issue Description: "${description || 'No description provided'}"
 
 Severity:`.trim();
 
-  let parts = [prompt];
-
-  if (imageBase64) {
-    parts.push({
-      inlineData: {
-        data: imageBase64,
-        mimeType: mimeType || 'image/jpeg',
-      },
-    });
+  const parts = [{ text: prompt }];
+  if (imageBase64 && imageBase64.length < 3_500_000) {
+    parts.push({ inlineData: { data: imageBase64, mimeType: mimeType || 'image/jpeg' } });
   }
 
   const raw = await _runPrompt(parts);
@@ -184,14 +175,9 @@ Description: "${description}"
 
 Is spam:`.trim();
 
-  let parts = [prompt];
-  if (imageBase64) {
-    parts.push({
-      inlineData: {
-        data: imageBase64,
-        mimeType: mimeType || 'image/jpeg',
-      },
-    });
+  const parts = [{ text: prompt }];
+  if (imageBase64 && imageBase64.length < 3_500_000) {
+    parts.push({ inlineData: { data: imageBase64, mimeType: mimeType || 'image/jpeg' } });
   }
 
   const raw = await _runPrompt(parts);
@@ -207,4 +193,30 @@ Is spam:`.trim();
  */
 const isServiceAvailable = () => _serviceAvailable;
 
-module.exports = { categorizeReport, estimateSeverity, detectSpam, isServiceAvailable };
+// ── Ward Daily Summary ──────────────────────────────────────────────────────
+/**
+ * Generates a 2-sentence daily briefing for a ward official based on pending issues.
+ * Returns null if AI is unavailable or there are no issues.
+ *
+ * @param {string} wardId
+ * @param {Array<{title:string, category:string, status:string, priorityScore:number}>} issues
+ * @returns {Promise<string|null>}
+ */
+const generateWardSummary = async (wardId, issues) => {
+  if (!issues.length) return null;
+
+  const issueList = issues.slice(0, 20).map((r, i) =>
+    `${i + 1}. [${r.category ?? 'Other'}] ${r.title} — Priority: ${r.priorityScore ?? 'N/A'}/10 (${r.status})`
+  ).join('\n');
+
+  const prompt = `You are a civic management assistant for Ward ${wardId}. Write exactly 2 sentences summarising the following pending civic issues for a ward official's morning briefing. Be specific: mention categories, counts, and any critical priority issues. Keep it factual and actionable.
+
+Pending Issues:
+${issueList}
+
+Summary:`.trim();
+
+  return _runPrompt(prompt, 10000);
+};
+
+module.exports = { categorizeReport, estimateSeverity, detectSpam, isServiceAvailable, generateWardSummary };
