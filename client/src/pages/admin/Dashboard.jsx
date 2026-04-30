@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Title, Text, Group, Stack, SimpleGrid, Card, ThemeIcon,
-  Badge, Table, Anchor, Skeleton, Progress,
+  Badge, Table, Anchor, Skeleton,
 } from '@mantine/core';
 import {
   IconFileReport, IconCircleCheck, IconUsers, IconChartBar, IconExternalLink,
@@ -78,7 +78,6 @@ function SparkLine({ data }) {
     x: (i / (data.length - 1)) * W,
     y: H - (d.count / max) * (H - 8) - 4,
   }));
-  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
   const fill = [...pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`),
   `${W},${H}`, `0,${H}`].join(' ');
 
@@ -115,20 +114,14 @@ export default function AdminDashboard() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch a large batch to derive all analytics client-side
-      const [allRes, resolvedRes] = await Promise.all([
-        API.get('/reports', { params: { limit: 200 } }),
-        API.get('/reports', { params: { status: 'Resolved', limit: 200 } }),
-      ]);
+      const res = await API.get('/reports', { params: { limit: 200 } });
+      const all = res.data.data.reports ?? [];
 
-      const all = allRes.data.data.reports ?? [];
-      const resolved = resolvedRes.data.data.reports ?? [];
-
-      // KPIs
       const now = new Date();
       const month = now.getMonth();
-      const year = now.getFullYear();
-      const resolvedThisMonth = resolved.filter(r => {
+      const year  = now.getFullYear();
+      const resolvedAll       = all.filter(r => r.status === 'Resolved');
+      const resolvedThisMonth = resolvedAll.filter(r => {
         const d = new Date(r.resolvedAt ?? r.updatedAt);
         return d.getMonth() === month && d.getFullYear() === year;
       }).length;
@@ -137,18 +130,16 @@ export default function AdminDashboard() {
         : 0;
 
       setKpi({
-        total: allRes.data.data.totalDocs ?? all.length,
+        total: res.data.data.totalDocs ?? all.length,
         resolved: resolvedThisMonth,
         avgPrio: avgPriority,
       });
 
-      // Category breakdown
       const catMap = {};
       all.forEach(r => { if (r.category) catMap[r.category] = (catMap[r.category] ?? 0) + 1; });
       setCatData(Object.entries(catMap).map(([label, count]) => ({ label, count }))
         .sort((a, b) => b.count - a.count));
 
-      // Daily counts (last 30 days)
       const days = 30;
       const buckets = {};
       for (let i = days - 1; i >= 0; i--) {
@@ -164,7 +155,7 @@ export default function AdminDashboard() {
         date: date.slice(5), count,
       })));
 
-      setReports(resolved.slice(0, 8));
+      setReports(resolvedAll.slice(0, 8));
     } catch (err) {
       console.error('Admin dashboard error:', err);
     } finally {
@@ -245,8 +236,8 @@ export default function AdminDashboard() {
                   <Table.Td><Badge size="xs" color="cyan" variant="dot">{r.category}</Badge></Table.Td>
                   <Table.Td>
                     <Text size="xs" fw={700}
-                      c={r.priorityScore >= 4 ? 'red' : r.priorityScore >= 2 ? 'yellow' : 'dimmed'}>
-                      {r.priorityScore}/5
+                      c={r.priorityScore >= 8 ? 'red' : r.priorityScore >= 4 ? 'yellow' : 'dimmed'}>
+                      {r.priorityScore}/10
                     </Text>
                   </Table.Td>
                   <Table.Td>

@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Title, Text, Group, Stack, Card, Badge, Button,
-  Skeleton, ActionIcon, Tooltip, Divider, ThemeIcon, Center,
+  Skeleton, ActionIcon, Tooltip, Divider, ThemeIcon, Center, Chip,
 } from '@mantine/core';
 import {
   IconBell, IconCheck, IconChecks, IconArrowRight,
@@ -14,7 +14,7 @@ import API from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../services/socket';
 
-// ─── Design tokens ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Design tokens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const GREEN     = '#00FF41';
 const GREEN_DIM = 'rgba(0,255,65,0.08)';
 const GREEN_BDR = 'rgba(0,255,65,0.20)';
@@ -23,7 +23,7 @@ const BORDER    = 'rgba(255,255,255,0.07)';
 const UNREAD_BG = 'rgba(0,255,65,0.05)';
 const UNREAD_BD = 'rgba(0,255,65,0.15)';
 
-// ─── Notification type → icon color ──────────────────────────────────────────
+// â”€â”€â”€ Notification type â†’ icon color â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TYPE_CONFIG = {
   status_update: { color: '#3b82f6', label: 'Status' },
   comment:       { color: '#14b8a6', label: 'Comment' },
@@ -32,7 +32,40 @@ const TYPE_CONFIG = {
   default:       { color: '#8b5cf6', label: 'Update' },
 };
 
-// ─── Relative time (dayjs-free, keeps bundle lean) ───────────────────────────
+// Filter tabs â€” value matches notification.type or 'all'
+const FILTER_TABS = [
+  { value: 'all',           label: 'All' },
+  { value: 'status_update', label: 'Status' },
+  { value: 'comment',       label: 'Comment' },
+  { value: 'upvote',        label: 'Upvote' },
+  { value: 'assignment',    label: 'Assigned' },
+];
+
+// â”€â”€â”€ Date grouping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function getDateLabel(dateStr) {
+  const date  = new Date(dateStr);
+  const now   = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const d     = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diff  = Math.floor((today - d) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  if (diff < 7)  return 'This Week';
+  return 'Older';
+}
+
+function groupByDate(items) {
+  const ORDER = ['Today', 'Yesterday', 'This Week', 'Older'];
+  const map   = {};
+  for (const n of items) {
+    const label = getDateLabel(n.createdAt);
+    if (!map[label]) map[label] = [];
+    map[label].push(n);
+  }
+  return ORDER.filter(k => map[k]).map(k => ({ label: k, items: map[k] }));
+}
+
+// â”€â”€â”€ Relative time â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime();
   const m    = Math.floor(diff / 60000);
@@ -45,17 +78,20 @@ function timeAgo(dateStr) {
   return new Date(dateStr).toLocaleDateString('en-GB', { dateStyle: 'medium' });
 }
 
-// ─── NotificationRow ──────────────────────────────────────────────────────────
-function NotificationRow({ notif, onMarkRead }) {
+// â”€â”€â”€ NotificationRow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function NotificationRow({ notif, onMarkRead, userRole }) {
   const navigate  = useNavigate();
   const cfg       = TYPE_CONFIG[notif.type] ?? TYPE_CONFIG.default;
   const isUnread  = !notif.isRead;
 
   const handleClick = async () => {
     if (isUnread) await onMarkRead(notif._id);
-    // Navigate to associated report if available
     const reportId = notif.report?._id ?? notif.report;
-    if (reportId) navigate(`/reports/${reportId}`);
+    if (!reportId) return;
+    const path = userRole === 'ward_official' ? `/ward/reports/${reportId}`
+               : userRole === 'field_worker'  ? `/field/dashboard`
+               : `/reports/${reportId}`;
+    navigate(path);
   };
 
   return (
@@ -129,8 +165,24 @@ function NotificationRow({ notif, onMarkRead }) {
   );
 }
 
-// ─── Empty state ──────────────────────────────────────────────────────────────
-function EmptyState() {
+// â”€â”€â”€ Date group header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function DateGroupHeader({ label }) {
+  return (
+    <Divider
+      label={
+        <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.08em' }}>
+          {label}
+        </Text>
+      }
+      labelPosition="left"
+      color={BORDER}
+      my={0}
+    />
+  );
+}
+
+// â”€â”€â”€ Empty state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function EmptyState({ filtered }) {
   return (
     <Center py={80}>
       <Stack align="center" gap="md">
@@ -139,17 +191,19 @@ function EmptyState() {
           <IconBell size={34} />
         </ThemeIcon>
         <Title order={4} style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#555' }}>
-          No notifications yet
+          {filtered ? 'No notifications of this type' : 'No notifications yet'}
         </Title>
         <Text size="sm" c="dimmed" ta="center" maw={280}>
-          You'll see status updates, comments, and upvote alerts here.
+          {filtered
+            ? 'Try switching to a different filter tab above.'
+            : 'You\'ll see status updates, comments, and upvote alerts here.'}
         </Text>
       </Stack>
     </Center>
   );
 }
 
-// ─── NotificationsPage ────────────────────────────────────────────────────────
+// â”€â”€â”€ NotificationsPage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PAGE_SIZE = 20;
 
 export default function NotificationsPage() {
@@ -162,9 +216,10 @@ export default function NotificationsPage() {
   const [page,        setPage]        = useState(1);
   const [hasMore,     setHasMore]     = useState(false);
   const [markingAll,  setMarkingAll]  = useState(false);
+  const [typeFilter,  setTypeFilter]  = useState('all');
 
-  // ── Fetch notifications (paginated) ────────────────────────────────────────
-  const fetch = useCallback(async (p = 1, append = false) => {
+  // â”€â”€ Fetch notifications (paginated) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const fetchNotifs = useCallback(async (p = 1, append = false) => {
     if (p === 1) setLoading(true); else setLoadingMore(true);
     try {
       const res  = await API.get('/notifications', { params: { page: p, limit: PAGE_SIZE } });
@@ -181,25 +236,19 @@ export default function NotificationsPage() {
     }
   }, []);
 
-  // Initial load + mark all as read when page opens
+  // Initial load
   useEffect(() => {
-    fetch(1);
-    // Clear badge in AppShell — fire a custom event the bell listens to
+    fetchNotifs(1);
     window.dispatchEvent(new CustomEvent('notifications:viewed'));
-  }, [fetch]);
+  }, [fetchNotifs]);
 
-  // ── Real-time: new notification pushed from server ─────────────────────────
+  // â”€â”€ Real-time â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useSocket(user?._id, {
-    newNotification: (notif) => {
-      setItems(prev => [notif, ...prev]);
-    },
-    // Also handle the statusUpdated event from the existing server code
-    statusUpdated: (notif) => {
-      setItems(prev => [notif, ...prev]);
-    },
+    newNotification: (notif) => { setItems(prev => [notif, ...prev]); },
+    statusUpdated:   (notif) => { setItems(prev => [notif, ...prev]); },
   });
 
-  // ── Mark single as read ────────────────────────────────────────────────────
+  // â”€â”€ Mark single as read â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleMarkRead = useCallback(async (id) => {
     try {
       await API.put(`/notifications/${id}/read`);
@@ -208,14 +257,14 @@ export default function NotificationsPage() {
     } catch { /* silent */ }
   }, []);
 
-  // ── Mark all as read ───────────────────────────────────────────────────────
+  // â”€â”€ Mark all as read â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleMarkAll = async () => {
     setMarkingAll(true);
     try {
       await API.put('/notifications/read-all');
       setItems(prev => prev.map(n => ({ ...n, isRead: true })));
       window.dispatchEvent(new CustomEvent('notifications:viewed'));
-      toast.show({ title: 'All caught up ✓', message: 'All notifications marked as read.', color: 'civic', autoClose: 3000 });
+      toast.show({ title: 'All caught up âœ“', message: 'All notifications marked as read.', color: 'civic', autoClose: 3000 });
     } catch {
       toast.show({ title: 'Failed', message: 'Could not mark all as read.', color: 'red' });
     } finally {
@@ -223,27 +272,34 @@ export default function NotificationsPage() {
     }
   };
 
+  // â”€â”€ Derived: filter + group â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const filtered = typeFilter === 'all'
+    ? items
+    : items.filter(n => (n.type ?? 'default') === typeFilter);
+
+  const groups    = groupByDate(filtered);
   const unreadCount = items.filter(n => !n.isRead).length;
+  const isFiltered  = typeFilter !== 'all';
 
   return (
     <Box maw={680} mx="auto">
 
       {/* Header */}
-      <Group justify="space-between" align="flex-end" mb="xl">
+      <Group justify="space-between" align="flex-end" mb="lg">
         <Box>
           <Title order={2}
             style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#fff', letterSpacing: '-0.02em' }}>
             Notifications
           </Title>
           <Text size="sm" c="dimmed" mt={4}>
-            {loading ? 'Loading…' : `${unreadCount} unread`}
+            {loading ? 'Loadingâ€¦' : `${unreadCount} unread Â· ${items.length} total`}
           </Text>
         </Box>
 
         <Group gap="sm">
           <Tooltip label="Refresh" position="top" withArrow>
             <ActionIcon size="sm" variant="subtle" color="civic" radius="md"
-              onClick={() => fetch(1)}
+              onClick={() => fetchNotifs(1)}
               disabled={loading}>
               <IconRefresh size={16} />
             </ActionIcon>
@@ -261,6 +317,27 @@ export default function NotificationsPage() {
         </Group>
       </Group>
 
+      {/* â”€â”€ Type filter chips â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      <Chip.Group value={typeFilter} onChange={setTypeFilter}>
+        <Group gap={6} mb="md">
+          {FILTER_TABS.map(tab => (
+            <Chip
+              key={tab.value}
+              value={tab.value}
+              size="xs"
+              radius="xl"
+              variant="outline"
+              color="civic"
+              styles={{
+                label: { fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: '0.75rem' },
+              }}
+            >
+              {tab.label}
+            </Chip>
+          ))}
+        </Group>
+      </Chip.Group>
+
       {/* Notification list */}
       <Card p={0} radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
         {loading ? (
@@ -277,16 +354,22 @@ export default function NotificationsPage() {
               </Box>
             ))}
           </Stack>
-        ) : items.length === 0 ? (
-          <EmptyState />
+        ) : filtered.length === 0 ? (
+          <EmptyState filtered={isFiltered} />
         ) : (
           <AnimatePresence initial={false}>
-            {items.map(n => (
-              <NotificationRow
-                key={n._id}
-                notif={n}
-                onMarkRead={handleMarkRead}
-              />
+            {groups.map(group => (
+              <React.Fragment key={group.label}>
+                <DateGroupHeader label={group.label} />
+                {group.items.map(n => (
+                  <NotificationRow
+                    key={n._id}
+                    notif={n}
+                    onMarkRead={handleMarkRead}
+                    userRole={user?.role}
+                  />
+                ))}
+              </React.Fragment>
             ))}
           </AnimatePresence>
         )}
@@ -297,7 +380,7 @@ export default function NotificationsPage() {
             <Button
               fullWidth size="sm" radius="md" variant="subtle" color="civic"
               loading={loadingMore}
-              onClick={() => fetch(page + 1, true)}
+              onClick={() => fetchNotifs(page + 1, true)}
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
               Load more

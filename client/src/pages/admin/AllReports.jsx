@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  Box, Title, Text, Group, Card, Table, Badge, Select, Button,
+  Box, Title, Text, Group, Stack, Card, Table, Badge, Select, Button,
   Anchor, TextInput, Skeleton, Pagination,
 } from '@mantine/core';
-import { IconDownload, IconSearch, IconFilter, IconCalendar } from '@tabler/icons-react';
+import { IconDownload, IconSearch, IconFilter, IconCalendar, IconInbox } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import API from '../../services/api';
@@ -178,7 +178,10 @@ export default function AllReports() {
                 ? (
                   <Table.Tr>
                     <Table.Td colSpan={7}>
-                      <Text size="sm" c="dimmed" ta="center" py="xl">No reports match the current filters.</Text>
+                      <Stack align="center" gap="xs" py="xl">
+                        <IconInbox size={32} color="#444" />
+                        <Text size="sm" c="dimmed">No reports match the current filters.</Text>
+                      </Stack>
                     </Table.Td>
                   </Table.Tr>
                 )
@@ -194,8 +197,8 @@ export default function AllReports() {
                     <Table.Td><Badge size="xs" color="cyan" variant="dot">{r.category ?? '—'}</Badge></Table.Td>
                     <Table.Td><Badge size="sm" color={STATUS_COLOR[r.status] ?? 'gray'} variant="light">{r.status}</Badge></Table.Td>
                     <Table.Td>
-                      <Text size="xs" fw={700} c={r.priorityScore >= 4 ? '#ef4444' : r.priorityScore >= 2 ? '#f59e0b' : '#6b7280'}>
-                        {r.priorityScore ?? '—'}/5
+                      <Text size="xs" fw={700} c={r.priorityScore >= 8 ? '#ef4444' : r.priorityScore >= 4 ? '#f59e0b' : '#6b7280'}>
+                        {r.priorityScore ?? '—'}/10
                       </Text>
                     </Table.Td>
                     <Table.Td><Text size="xs" c="dimmed">{r.wardId ?? '—'}</Text></Table.Td>

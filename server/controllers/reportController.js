@@ -27,16 +27,19 @@ const createReport = async (req, res, next) => {
       });
     }
 
-    const { title, description, latitude, longitude, isAnonymous, category: userCategory, severity: userSeverity } = req.body;
+    const { title, description, latitude, longitude, isAnonymous, category: userCategory, severity: userSeverity, streetAddress } = req.body;
 
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);
 
+    const imageBase64 = req.file ? req.file.buffer.toString('base64') : null;
+    const mimeType = req.file ? req.file.mimetype : null;
+
     // ── 2. Run AI pipeline in parallel (non-blocking best-effort) ────────
     const [aiCategory, severity, isSpam] = await Promise.all([
-      categorizeReport(title, description),
-      estimateSeverity(description),
-      detectSpam(description),
+      categorizeReport(title, description, imageBase64, mimeType),
+      estimateSeverity(description, imageBase64, mimeType),
+      detectSpam(description, imageBase64, mimeType),
     ]);
 
     // ── 3. Spam gate (FR-10) ─────────────────────────────────────────────
@@ -88,11 +91,11 @@ const createReport = async (req, res, next) => {
     const finalCategory = userCategory?.trim() || aiCategory || 'Other';
 
     // Priority: user-submitted severity (from pre-flight /api/ai/severity call)
-    // > AI severity from server-side call > default 3 (Moderate)
+    // > AI severity from server-side call > default 5 (Moderate out of 10)
     const parsedUserSeverity = userSeverity ? parseInt(userSeverity, 10) : null;
-    const finalSeverity      = (parsedUserSeverity >= 1 && parsedUserSeverity <= 5)
+    const finalSeverity      = (parsedUserSeverity >= 1 && parsedUserSeverity <= 10)
       ? parsedUserSeverity
-      : (severity ?? 3);
+      : (severity ?? 5);
 
     const report = await Report.create({
       title,
@@ -111,6 +114,7 @@ const createReport = async (req, res, next) => {
       submittedBy : req.user._id,
       isAnonymous : isAnonymous === 'true' || isAnonymous === true || false,
       evidences,
+      streetAddress: streetAddress?.trim() || null,
 
       // Ward routing results (FR-11)
       ...(wardResult && {
@@ -158,8 +162,10 @@ const createReport = async (req, res, next) => {
           id          : report._id,
           title       : report.title,
           description : report.description,
-          category    : report.category,
-          severity    : report.severity,
+          category    : finalCategory,
+          severity    : finalSeverity,
+          aiCategory,
+          isSpam,
           status      : report.status,
           wardId      : report.wardId   || null,
           wardName    : wardResult?.wardName || null,
@@ -186,7 +192,7 @@ const createReport = async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const getReports = async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, status, category, wardId, submittedBy } = req.query;
+    const { page = 1, limit = 10, status, category, wardId, submittedBy, q, from, to } = req.query;
 
     const filter = { isSpam: false };
     if (status) {
@@ -194,6 +200,20 @@ const getReports = async (req, res, next) => {
       filter.status = statuses.length === 1 ? statuses[0] : { $in: statuses };
     }
     if (category) filter.category = category;
+
+    // ── Keyword search (title + description) ────────────────────────────
+    if (q?.trim()) {
+      const escaped = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex   = new RegExp(escaped, 'i');
+      filter.$or = [{ title: regex }, { description: regex }];
+    }
+
+    // ── Date range filter ────────────────────────────────────────────────
+    if (from || to) {
+      filter.createdAt = {};
+      if (from) filter.createdAt.$gte = new Date(from);
+      if (to)   filter.createdAt.$lte = new Date(to);
+    }
 
     // ── submittedBy filter (FR-01 citizen dashboard) ─────────────────────
     // 'me' → scope to the requesting user's own reports.
@@ -413,6 +433,14 @@ const getNearbyReports = async (req, res, next) => {
   }
 };
 
+// Valid forward-only status transitions for reports
+const STATUS_TRANSITIONS = {
+  'Open':        ['Assigned', 'Resolved'],
+  'Assigned':    ['In Progress', 'Resolved'],
+  'In Progress': ['Resolved'],
+  'Resolved':    [],
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // @desc    Update report status
 // @route   PUT /api/reports/:id/status
@@ -422,9 +450,9 @@ const getNearbyReports = async (req, res, next) => {
 const updateStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { status, note } = req.body;
+    const { status, note, assignedTo } = req.body;
 
-    const validStatuses = ['Open', 'Assigned', 'In Progress', 'Resolved'];
+    const validStatuses = Object.keys(STATUS_TRANSITIONS);
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
@@ -442,8 +470,21 @@ const updateStatus = async (req, res, next) => {
       });
     }
 
+    // Enforce forward-only transition matrix
+    const allowed = STATUS_TRANSITIONS[report.status] ?? [];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: allowed.length
+          ? `Cannot move from "${report.status}" to "${status}". Allowed next states: ${allowed.join(', ')}.`
+          : `Report is already in a terminal state ("${report.status}") and cannot be changed.`,
+        data: null,
+      });
+    }
+
     // Update main status field
     report.status = status;
+    if (assignedTo) report.assignedTo = assignedTo;
 
     // Push into history array
     report.statusHistory.push({
@@ -502,4 +543,95 @@ const updateStatus = async (req, res, next) => {
   }
 };
 
-module.exports = { createReport, getReports, getReportById, toggleUpvote, addComment, getNearbyReports, updateStatus };
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Get stats for the authenticated citizen's own reports
+// @route   GET /api/reports/stats
+// @access  Private — any authenticated user
+// ─────────────────────────────────────────────────────────────────────────────
+const getMyStats = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+
+    const [open, assigned, inProgress, resolved] = await Promise.all([
+      Report.countDocuments({ submittedBy: userId, status: 'Open',        isSpam: false }),
+      Report.countDocuments({ submittedBy: userId, status: 'Assigned',    isSpam: false }),
+      Report.countDocuments({ submittedBy: userId, status: 'In Progress', isSpam: false }),
+      Report.countDocuments({ submittedBy: userId, status: 'Resolved',    isSpam: false }),
+    ]);
+
+    const total = open + assigned + inProgress + resolved;
+
+    return res.status(200).json({
+      success: true,
+      message: 'Stats fetched.',
+      data: { open, assigned, inProgress, resolved, total },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Platform-wide analytics aggregation (heatmap, categories, ward stats)
+// @route   GET /api/reports/analytics?from=YYYY-MM-DD&to=YYYY-MM-DD
+// @access  Private (system_admin)
+// ─────────────────────────────────────────────────────────────────────────────
+const getAnalytics = async (req, res, next) => {
+  try {
+    const { from, to } = req.query;
+    const match = { isSpam: { $ne: true } };
+    if (from || to) {
+      match.createdAt = {};
+      if (from) match.createdAt.$gte = new Date(from);
+      if (to)   match.createdAt.$lte = new Date(to + 'T23:59:59.999Z');
+    }
+
+    const [catCounts, wardStats, heatDocs, total] = await Promise.all([
+      Report.aggregate([
+        { $match: match },
+        { $group: { _id: '$category', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $project: { _id: 0, label: '$_id', count: 1 } },
+      ]),
+      Report.aggregate([
+        { $match: match },
+        {
+          $group: {
+            _id: '$wardId',
+            total:    { $sum: 1 },
+            resolved: { $sum: { $cond: [{ $eq: ['$status', 'Resolved'] }, 1, 0] } },
+            resHoursArr: {
+              $push: {
+                $cond: [
+                  { $and: [{ $eq: ['$status', 'Resolved'] }, { $gt: ['$resolutionTimeHours', null] }] },
+                  '$resolutionTimeHours',
+                  '$$REMOVE',
+                ],
+              },
+            },
+          },
+        },
+        { $sort: { total: -1 } },
+        { $project: { _id: 0, ward: { $ifNull: ['$_id', 'Unknown'] }, total: 1, resolved: 1, resHoursArr: 1 } },
+      ]),
+      Report.find(
+        { ...match, 'location.coordinates': { $exists: true } },
+        { 'location.coordinates': 1 }
+      ).lean(),
+      Report.countDocuments(match),
+    ]);
+
+    const heatPoints = heatDocs
+      .filter(r => Array.isArray(r.location?.coordinates) && r.location.coordinates.length >= 2)
+      .map(r => [r.location.coordinates[1], r.location.coordinates[0], 1]);
+
+    return res.status(200).json({
+      success: true,
+      data: { catCounts, wardStats, heatPoints, total },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { createReport, getReports, getReportById, toggleUpvote, addComment, getNearbyReports, updateStatus, getMyStats, getAnalytics };

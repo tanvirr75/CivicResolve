@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box, Text, Group, Stack, Badge, Card, Select, Switch, Button,
-  ScrollArea, Skeleton, ThemeIcon, ActionIcon,
+  ScrollArea, Skeleton, ThemeIcon, ActionIcon, Divider,
 } from '@mantine/core';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   IconMapPin, IconFlame, IconFilter, IconArrowUp, IconChevronLeft, IconChevronRight,
+  IconStatusChange, IconCurrentLocation,
 } from '@tabler/icons-react';
 import { motion } from 'framer-motion';
 import { notifications } from '@mantine/notifications';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import API from '../../services/api';
 
 // ── Leaflet default icons ─────────────────────────────────────────────────────
@@ -62,23 +65,41 @@ function HeatmapLayer({ points }) {
   return null;
 }
 
+// ─── MapController: exposes flyTo via ref ────────────────────────────────────
+function MapController({ flyToRef }) {
+  const map = useMap();
+  useEffect(() => { flyToRef.current = (lat, lng, zoom = 16) => map.flyTo([lat, lng], zoom, { duration: 1 }); }, [map, flyToRef]);
+  return null;
+}
+
 // ─── MapView ─────────────────────────────────────────────────────────────────
 export default function MapView() {
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+  
   const [reports,    setReports]    = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [heatmap,    setHeatmap]    = useState(false);
   const [catFilter,  setCatFilter]  = useState(null);
+  const [statusFilter, setStatusFilter] = useState(null);
   const [sidebarOpen,setSidebarOpen]= useState(true);
 
-  // Local upvote state to avoid refetch
+  // Map flyTo ref
+  const flyToRef = useRef(null);
+
+  const flyTo = useCallback((lat, lng) => {
+    if (flyToRef.current) flyToRef.current(lat, lng);
+  }, []);
   const [upvotedIds, setUpvotedIds] = useState(new Set());
 
   // ── Fetch reports ─────────────────────────────────────────────────────────
   const fetchReports = useCallback(async () => {
     setLoading(true);
     try {
+      // Default to all active statuses; filter server-side when a specific status is set
+      const statusParam = statusFilter ?? 'Open,Assigned,In Progress';
       const res = await API.get('/reports', {
-        params: { status: 'Open,Assigned,In Progress', limit: 200 },
+        params: { status: statusParam, limit: 200 },
       });
       const list = res.data.data.reports ?? res.data.data.docs ?? [];
       setReports(list);
@@ -87,12 +108,18 @@ export default function MapView() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [statusFilter]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
   // ── Upvote ────────────────────────────────────────────────────────────────
   const handleUpvote = useCallback(async (reportId) => {
+    if (!isAuthenticated()) {
+      notifications.show({ title: 'Login Required', message: 'Please login or register to upvote issues.', color: 'civic' });
+      navigate('/login');
+      return;
+    }
+    
     if (upvotedIds.has(reportId)) return;
     try {
       await API.put(`/reports/${reportId}/upvote`);
@@ -107,9 +134,10 @@ export default function MapView() {
   }, [upvotedIds]);
 
   // ── Derived data ──────────────────────────────────────────────────────────
-  const visibleReports = catFilter
-    ? reports.filter(r => r.category === catFilter)
-    : reports;
+  const visibleReports = reports.filter(r => {
+    if (catFilter && r.category !== catFilter) return false;
+    return true; // status filter is applied server-side via fetchReports
+  });
 
   const heatPoints = reports
     .filter(r => r?.location?.coordinates)
@@ -131,6 +159,8 @@ export default function MapView() {
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
           attribution='&copy; <a href="https://carto.com/">CARTO</a>'
         />
+        {/* Wire MapController so flyTo works from outside MapContainer */}
+        <MapController flyToRef={flyToRef} />
 
         {heatmap && <HeatmapLayer points={heatPoints} />}
 
@@ -196,6 +226,23 @@ export default function MapView() {
           <IconFlame size={16} color={heatmap ? GREEN : '#555'} />
           <Text size="xs" c={heatmap ? 'civic.4' : 'dimmed'} fw={500}>Heatmap</Text>
           <Switch size="xs" color="civic" checked={heatmap} onChange={e => setHeatmap(e.currentTarget.checked)} />
+
+          {/* Divider + Locate Me */}
+          <Box style={{ width: 1, height: 18, background: BORDER }} />
+          <ActionIcon
+            size="sm" variant="subtle" radius="md"
+            style={{ color: GREEN }}
+            title="Centre map on my location"
+            onClick={() => {
+              if (!navigator.geolocation) return;
+              navigator.geolocation.getCurrentPosition(
+                ({ coords }) => flyTo(coords.latitude, coords.longitude),
+                () => notifications.show({ title: 'Location denied', message: 'Enable location access in your browser.', color: 'orange' })
+              );
+            }}
+          >
+            <IconCurrentLocation size={15} />
+          </ActionIcon>
         </Group>
       </motion.div>
 
@@ -264,6 +311,26 @@ export default function MapView() {
             }}
           />
 
+          {/* Status filter */}
+          <Select
+            size="xs"
+            placeholder="All statuses"
+            clearable
+            radius="md"
+            leftSection={<IconStatusChange size={12} />}
+            data={[
+              { value: 'Open',        label: '🟡 Open' },
+              { value: 'Assigned',    label: '🔵 Assigned' },
+              { value: 'In Progress', label: '🟠 In Progress' },
+            ]}
+            value={statusFilter}
+            onChange={setStatusFilter}
+            styles={{
+              input:   { background: 'rgba(255,255,255,0.05)', border: `1px solid ${BORDER}`, color: '#e5e5e5', fontSize: '0.8rem' },
+              option:  { fontSize: '0.8rem' },
+            }}
+          />
+
           {/* Category legend */}
           <Group gap={6} wrap="wrap">
             {Object.entries(CAT_COLOR).map(([cat, color]) => (
@@ -300,6 +367,10 @@ export default function MapView() {
                             border: `1px solid rgba(255,255,255,0.07)`,
                             borderLeft: `3px solid ${color}`,
                             cursor: 'pointer',
+                          }}
+                          onClick={() => {
+                            const [lng, lat] = r.location.coordinates;
+                            flyTo(lat, lng);
                           }}
                         >
                           <Group justify="space-between" mb={4}>

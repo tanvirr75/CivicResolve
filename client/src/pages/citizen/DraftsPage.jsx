@@ -27,6 +27,18 @@ function removeDraft(draftId) { writeDrafts(readDrafts().filter(d => d.draftId !
 function patchDraft(draftId, patch) {
   writeDrafts(readDrafts().map(d => d.draftId === draftId ? { ...d, ...patch } : d));
 }
+function buildSyncPayload(draft) {
+  return {
+    draftId:     draft.draftId,
+    title:       draft.title,
+    description: draft.description ?? draft.title ?? '',
+    category:    draft.category,
+    createdAt:   draft.createdAt,
+    pin:         draft.pin,
+    anonymous:   draft.anonymous,
+    severity:    draft.severity,
+  };
+}
 
 // ─── Delete confirmation popover ──────────────────────────────────────────────
 function DeletePopover({ onConfirm }) {
@@ -166,12 +178,7 @@ export default function DraftsPage() {
   // Sync single draft
   const syncDraft = useCallback(async (draft) => {
     try {
-      await API.post('/drafts/sync', {
-        message:   draft.description ?? draft.title ?? '',
-        createdAt: draft.createdAt,
-        title:     draft.title,
-        category:  draft.category,
-      });
+      await API.post('/drafts/sync', buildSyncPayload(draft));
       patchDraft(draft.draftId, { isSynced: true });
       setDrafts(readDrafts());
       toast.show({ title: 'Draft synced ✓', message: `"${draft.title || 'Untitled'}" synced to server.`, color: 'civic', autoClose: 3000 });
@@ -188,12 +195,7 @@ export default function DraftsPage() {
     let ok = 0;
     for (const draft of pending) {
       try {
-        await API.post('/drafts/sync', {
-          message:   draft.description ?? draft.title ?? '',
-          createdAt: draft.createdAt,
-          title:     draft.title,
-          category:  draft.category,
-        });
+        await API.post('/drafts/sync', buildSyncPayload(draft));
         patchDraft(draft.draftId, { isSynced: true });
         ok++;
       } catch { /* skip, keep trying others */ }

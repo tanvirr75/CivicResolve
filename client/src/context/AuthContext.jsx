@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import API from '../services/api';
+import i18n from '../i18n'; // adjust path if your i18n init file is elsewhere
 
 // ─── Context ─────────────────────────────────────────────────────────────────
 const AuthContext = createContext(null);
@@ -43,7 +44,12 @@ export function AuthProvider({ children }) {
 
     try {
       const res = await API.get('/auth/me');
-      setUser(res.data.data.user); // { _id, name, email, role, wardId?, ... }
+      const userData = res.data.data.user; // { _id, name, email, role, wardId?, language?, ... }
+      setUser(userData);
+      // Sync UI language to user's stored preference (survives refresh)
+      if (userData?.language && userData.language !== i18n.language) {
+        i18n.changeLanguage(userData.language);
+      }
     } catch (err) {
       // Token rejected by server — wipe everything
       console.warn('[AuthContext] Token rejected — clearing session.');

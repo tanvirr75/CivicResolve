@@ -426,4 +426,77 @@ const toggleUserActive = async (req, res, next) => {
   }
 };
 
-module.exports = { register, login, getMe, logout, getFieldWorkers, updateProfile, getUsers, updateUserRole, toggleUserActive };
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Force-reset a user's password (admin generates a temp password)
+// @route   PUT /api/auth/users/:id/reset-password
+// @access  Private (system_admin only)
+// ─────────────────────────────────────────────────────────────────────────────
+const crypto = require('crypto');
+
+const resetUserPassword = async (req, res, next) => {
+  try {
+    if (req.params.id === req.user._id.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Use the regular profile update to change your own password.',
+        data: null,
+      });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.', data: null });
+    }
+
+    // Generate a cryptographically random 12-char temp password (unambiguous chars)
+    const chars   = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    const tempPwd = Array.from({ length: 12 }, () => chars[crypto.randomInt(chars.length)]).join('');
+
+    // Assign plain text — the pre-save hook in User.js will bcrypt-hash it automatically
+    user.passwordHash = tempPwd;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password reset successfully. Share the temporary password with the user securely.',
+      data: {
+        userId:       user._id,
+        userName:     user.name,
+        tempPassword: tempPwd,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Change own password (authenticated user)
+// @route   PUT /api/auth/change-password
+// @access  Private
+// ─────────────────────────────────────────────────────────────────────────────
+const changePassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: 'currentPassword and newPassword are required.' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ success: false, message: 'New password must be at least 8 characters.' });
+    }
+    const user = await User.findById(req.user._id).select('+passwordHash');
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+    const match = await user.comparePassword(currentPassword);
+    if (!match) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect.' });
+    }
+    user.passwordHash = newPassword;
+    await user.save();
+    res.json({ success: true, message: 'Password changed successfully.' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { register, login, getMe, logout, getFieldWorkers, updateProfile, getUsers, updateUserRole, toggleUserActive, resetUserPassword, changePassword };

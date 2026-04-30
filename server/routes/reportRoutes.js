@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, query } = require('express-validator');
-const { createReport, getReports, getReportById, toggleUpvote, addComment, getNearbyReports, updateStatus } = require('../controllers/reportController');
+const { createReport, getReports, getReportById, toggleUpvote, addComment, getNearbyReports, updateStatus, getMyStats, getAnalytics } = require('../controllers/reportController');
 const { authenticate, authorize, optionalAuthenticate } = require('../middleware/authenticate');
 const { uploadSingle }  = require('../middleware/upload');
 
@@ -30,6 +30,10 @@ const createReportValidation = [
   body('isAnonymous')
     .optional()
     .isBoolean().withMessage('isAnonymous must be true or false.'),
+
+  body('streetAddress')
+    .optional()
+    .trim(),
 ];
 
 // ── Validation: GET /api/reports ───────────────────────────────────────────
@@ -59,6 +63,13 @@ router.get('/', optionalAuthenticate, getReportsValidation, getReports);
 
 // GET /api/reports/nearby — public, duplicate detection (MUST be before /:id route)
 router.get('/nearby', getNearbyReports);
+
+// GET /api/reports/stats — private, citizen own-report aggregate counts
+// MUST be before /:id to prevent 'stats' being matched as a Mongo ObjectId
+router.get('/stats', authenticate, getMyStats);
+
+// GET /api/reports/analytics — private, admin-only platform-wide aggregation
+router.get('/analytics', authenticate, authorize('system_admin'), getAnalytics);
 
 // GET /api/reports/:id — public, single report
 router.get('/:id', getReportById);

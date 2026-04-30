@@ -32,7 +32,7 @@ const workOrderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['Pending', 'In Progress', 'Completed'],
+      enum: ['Pending', 'En Route', 'In Progress', 'Completed'],
       default: 'Pending',
     },
     notes: {
@@ -40,6 +40,16 @@ const workOrderSchema = new mongoose.Schema(
       trim: true,
       maxlength: 500,
     },
+
+    // ── Status audit trail ────────────────────────────────────────────────────
+    statusHistory: [
+      {
+        status:    { type: String },
+        changedAt: { type: Date, default: Date.now },
+        note:      { type: String, trim: true },
+      },
+    ],
+
     completedAt: {
       type: Date,
     },

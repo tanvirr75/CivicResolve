@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Title, Text, Group, Stack, Badge, Card, Button,
-  Skeleton, Alert, Anchor, Image, ThemeIcon, FileButton,
+  Skeleton, Alert, Anchor, Image, ThemeIcon, FileButton, Stepper,
 } from '@mantine/core';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   IconArrowLeft, IconDownload, IconUpload, IconCircleCheck,
-  IconAlertCircle, IconX,
+  IconAlertCircle, IconX, IconChevronRight,
 } from '@tabler/icons-react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
@@ -51,6 +51,13 @@ export default function WorkOrderDetail() {
   // Resolve state
   const [resolving,  setResolving]  = useState(false);
 
+  // Progress advance state
+  const [advancing,  setAdvancing]  = useState(false);
+
+  // Status order for stepper
+  const STATUS_STEPS  = ['Pending', 'En Route', 'In Progress', 'Completed'];
+  const stepIndex = (s) => STATUS_STEPS.indexOf(s ?? 'Pending');
+
   // ── Fetch work order ──────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
@@ -60,6 +67,7 @@ export default function WorkOrderDetail() {
         const wo  = res.data.data?.workOrder ?? res.data.data;
         setOrder(wo);
         if (wo?.status === 'Completed') setUploaded(true);
+        if (wo?.proofUrl) setProofUrl(wo.proofUrl);
       } catch (err) {
         if (err.response?.status === 404) setNotFound(true);
       } finally {
@@ -107,6 +115,33 @@ export default function WorkOrderDetail() {
       });
     } finally {
       setUploading(false);
+    }
+  };
+
+  // ── Advance work order status ─────────────────────────────────────────────
+  const handleAdvanceStatus = async () => {
+    const current = order?.status ?? 'Pending';
+    const next    = STATUS_STEPS[stepIndex(current) + 1];
+    if (!next || next === 'Completed') return; // Completed is locked behind proof upload
+    setAdvancing(true);
+    try {
+      const res = await API.put(`/work-orders/${id}/status`, { status: next });
+      const updatedStatus = res.data.data?.status ?? next;
+      setOrder(prev => ({ ...prev, status: updatedStatus }));
+      notifications.show({
+        title:   `Status: ${updatedStatus}`,
+        message: 'Work order progress updated.',
+        color:   'civic',
+        autoClose: 3000,
+      });
+    } catch (err) {
+      notifications.show({
+        title:   'Update failed',
+        message: err.response?.data?.message ?? 'Could not update status.',
+        color:   'red',
+      });
+    } finally {
+      setAdvancing(false);
     }
   };
 
@@ -183,7 +218,7 @@ export default function WorkOrderDetail() {
                 style={{ height: 220, width: '100%' }}
               >
                 <TileLayer
-                  url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                  url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                   attribution='&copy; <a href="https://carto.com/">CARTO</a>'
                 />
                 <Marker position={[lat, lng]} />
@@ -234,95 +269,151 @@ export default function WorkOrderDetail() {
           )}
         </Stack>
 
-        {/* ── Right: proof upload + resolve ────────────────────────────── */}
+        {/* ── Right: progress stepper + proof upload + resolve ────────────────── */}
         <Stack gap="lg" style={{ flex: 1, minWidth: 260 }}>
+
+          {/* Progress Stepper */}
+          <Card p="lg" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+            <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb="md" style={{ letterSpacing: '0.06em' }}>
+              Progress
+            </Text>
+            <Stepper
+              active={stepIndex(order.status)}
+              color="civic"
+              size="sm"
+              orientation="vertical"
+              styles={{
+                stepIcon:        { background: 'rgba(255,255,255,0.05)', border: `1px solid ${BORDER}`, color: '#aaa' },
+                stepLabel:       { color: '#ccc', fontSize: '0.82rem', fontWeight: 600 },
+                stepDescription: { color: '#555', fontSize: '0.75rem' },
+                separator:       { background: BORDER },
+              }}
+            >
+              <Stepper.Step label="Pending"     description="Work order received" />
+              <Stepper.Step label="En Route"    description="Heading to the site" />
+              <Stepper.Step label="In Progress" description="Working on the fix" />
+              <Stepper.Step label="Completed"   description="Issue resolved" />
+            </Stepper>
+
+            {/* Advance Status Button — hidden when Completed */}
+            {order.status !== 'Completed' && (
+              <Button
+                fullWidth mt="md" size="sm" radius="md" variant="outline" color="civic"
+                loading={advancing}
+                disabled={stepIndex(order.status) >= STATUS_STEPS.indexOf('In Progress')}
+                rightSection={!advancing && <IconChevronRight size={14} />}
+                onClick={handleAdvanceStatus}
+                style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600 }}
+              >
+                {advancing ? 'Updating…' : `Advance to "${STATUS_STEPS[stepIndex(order.status) + 1] ?? 'Complete'}"`}
+              </Button>
+            )}
+          </Card>
+
           <Card p="lg" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
             <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb="md" style={{ letterSpacing: '0.06em' }}>
               Upload Proof of Fix
             </Text>
 
-            {uploaded ? (
-              <Alert
-                icon={<IconCircleCheck size={15} />}
-                color="civic" variant="light" radius="md"
-                style={{ border: `1px solid ${GREEN_BDR}`, background: GREEN_DIM }}
-              >
-                <Text size="xs" c="civic.3">
-                  Proof successfully uploaded. Work order is <strong>Completed</strong>.
-                </Text>
-                {proofUrl && (
-                  <Anchor href={proofUrl} target="_blank" size="xs" c="civic.4" mt={6} display="block"
-                    underline="always">
-                    View uploaded proof →
-                  </Anchor>
-                )}
-              </Alert>
-            ) : (
-              <Stack gap="md">
-                {/* Drop zone */}
-                <Card
-                  p="lg" radius="md"
-                  style={{
-                    background: proofFile ? GREEN_DIM : 'rgba(255,255,255,0.02)',
-                    border: `2px dashed ${proofFile ? GREEN_BDR : BORDER}`,
-                    textAlign: 'center',
-                    transition: 'border-color .2s',
-                  }}
+            <Stack gap="md">
+              {/* ── Existing proof (completed order) ── */}
+              {uploaded && proofUrl && (
+                <Alert
+                  icon={<IconCircleCheck size={15} />}
+                  color="civic" variant="light" radius="md"
+                  style={{ border: `1px solid ${GREEN_BDR}`, background: GREEN_DIM }}
                 >
-                  {proofPrev ? (
-                    <Box style={{ position: 'relative', display: 'inline-block' }}>
-                      <Image src={proofPrev} radius="md" maw={200} mx="auto" />
-                      <Button
-                        size="xs" color="red" variant="filled" radius="xl" mt="xs"
-                        leftSection={<IconX size={11} />}
-                        onClick={() => { setProofFile(null); setProofPrev(null); }}
-                      >
-                        Remove
-                      </Button>
-                    </Box>
-                  ) : (
-                    <Stack align="center" gap="sm">
-                      <ThemeIcon size={48} radius="xl"
-                        style={{ background: GREEN_DIM, border: `1px solid ${GREEN_BDR}`, color: GREEN }}>
-                        <IconUpload size={22} />
-                      </ThemeIcon>
-                      <Text size="xs" c="dimmed">
-                        Photo showing the resolved issue
-                      </Text>
-                      <FileButton onChange={handleFile} accept="image/*">
-                        {(props) => (
-                          <Button {...props} size="xs" variant="outline" color="civic" radius="md">
-                            Choose photo
-                          </Button>
-                        )}
-                      </FileButton>
-                    </Stack>
-                  )}
-                </Card>
-
-                {proofFile && (
-                  <Text size="xs" c="dimmed" ta="center">
-                    {proofFile.name} · {(proofFile.size / 1024).toFixed(0)} KB
+                  <Text size="xs" c="civic.3" mb={8}>
+                    Proof uploaded — work order <strong>Completed</strong>.
                   </Text>
-                )}
+                  <Image src={proofUrl} radius="md" maw={220} mb={6}
+                    style={{ border: `1px solid ${GREEN_BDR}` }} />
+                  <Anchor href={proofUrl} target="_blank" size="xs" c="civic.4"
+                    display="block" underline="always">
+                    Open full image →
+                  </Anchor>
+                </Alert>
+              )}
 
-                <Button
-                  fullWidth size="sm" radius="md" color="civic"
-                  loading={uploading}
-                  disabled={!proofFile}
-                  onClick={handleUpload}
-                  rightSection={!uploading && <IconUpload size={14} />}
-                  style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700,
-                    boxShadow: proofFile ? `0 0 18px rgba(0,255,65,0.2)` : 'none' }}
+              {uploaded && !proofUrl && (
+                <Alert
+                  icon={<IconCircleCheck size={15} />}
+                  color="civic" variant="light" radius="md"
+                  style={{ border: `1px solid ${GREEN_BDR}`, background: GREEN_DIM }}
                 >
-                  {uploading ? 'Uploading…' : 'Submit Proof & Mark Resolved'}
-                </Button>
+                  <Text size="xs" c="civic.3">
+                    Work order is <strong>Completed</strong>. Proof was submitted.
+                  </Text>
+                </Alert>
+              )}
 
+              {/* ── Drop zone — always visible for (re-)upload ── */}
+              <Card
+                p="lg" radius="md"
+                style={{
+                  background: proofFile ? GREEN_DIM : 'rgba(255,255,255,0.02)',
+                  border: `2px dashed ${proofFile ? GREEN_BDR : BORDER}`,
+                  textAlign: 'center',
+                  transition: 'border-color .2s',
+                }}
+              >
+                {proofPrev ? (
+                  <Box style={{ position: 'relative', display: 'inline-block' }}>
+                    <Image src={proofPrev} radius="md" maw={200} mx="auto" />
+                    <Button
+                      size="xs" color="red" variant="filled" radius="xl" mt="xs"
+                      leftSection={<IconX size={11} />}
+                      onClick={() => { setProofFile(null); setProofPrev(null); }}
+                    >
+                      Remove
+                    </Button>
+                  </Box>
+                ) : (
+                  <Stack align="center" gap="sm">
+                    <ThemeIcon size={48} radius="xl"
+                      style={{ background: GREEN_DIM, border: `1px solid ${GREEN_BDR}`, color: GREEN }}>
+                      <IconUpload size={22} />
+                    </ThemeIcon>
+                    <Text size="xs" c="dimmed">
+                      {uploaded ? 'Replace proof photo' : 'Photo showing the resolved issue'}
+                    </Text>
+                    <FileButton onChange={handleFile} accept="image/*">
+                      {(props) => (
+                        <Button {...props} size="xs" variant="outline" color="civic" radius="md">
+                          {uploaded ? 'Choose replacement' : 'Choose photo'}
+                        </Button>
+                      )}
+                    </FileButton>
+                  </Stack>
+                )}
+              </Card>
+
+              {proofFile && (
                 <Text size="xs" c="dimmed" ta="center">
-                  Submitting proof will automatically resolve the report.
+                  {proofFile.name} · {(proofFile.size / 1024).toFixed(0)} KB
                 </Text>
-              </Stack>
-            )}
+              )}
+
+              <Button
+                fullWidth size="sm" radius="md" color="civic"
+                loading={uploading}
+                disabled={!proofFile}
+                onClick={handleUpload}
+                rightSection={!uploading && <IconUpload size={14} />}
+                style={{
+                  fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700,
+                  boxShadow: proofFile ? `0 0 18px rgba(0,255,65,0.2)` : 'none',
+                }}
+              >
+                {uploading ? 'Uploading…' : uploaded ? 'Replace & Re-submit Proof' : 'Submit Proof & Mark Resolved'}
+              </Button>
+
+              <Text size="xs" c="dimmed" ta="center">
+                {uploaded
+                  ? 'You can replace the proof photo if needed.'
+                  : 'Submitting proof will automatically resolve the report.'}
+              </Text>
+            </Stack>
           </Card>
 
           {/* Work order meta */}

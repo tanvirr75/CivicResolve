@@ -23,6 +23,7 @@ import {
 } from '@tabler/icons-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
+import { useTranslation } from 'react-i18next';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -69,6 +70,7 @@ const inputStyles = {
 export default function LoginPage() {
   const navigate     = useNavigate();
   const { login }    = useAuth();
+  const { t }        = useTranslation();
   const [error, setError]     = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -148,12 +150,12 @@ export default function LoginPage() {
           order={2}
           style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#fff', letterSpacing: '-0.02em' }}
         >
-          Sign in
+          {t('Sign in')}
         </Title>
         <Text size="sm" c="dimmed">
-          Don't have an account?{' '}
+          {t("Don't have an account?")}{' '}
           <Anchor component={Link} to="/register" c="civic.4" size="sm" underline="never">
-            Create one →
+            {t('Create one →')}
           </Anchor>
         </Text>
       </Stack>
@@ -177,7 +179,7 @@ export default function LoginPage() {
       <form onSubmit={form.onSubmit(handleSubmit)}>
         <Stack gap="md">
           <TextInput
-            label="Email address"
+            label={t('Email address')}
             placeholder="you@example.com"
             autoComplete="off"
             leftSection={<IconMail size={16} color="#666" />}
@@ -186,8 +188,8 @@ export default function LoginPage() {
           />
 
           <PasswordInput
-            label="Password"
-            placeholder="Your password"
+            label={t('Password')}
+            placeholder="••••••••"
             autoComplete="new-password"
             leftSection={<IconLock size={16} color="#666" />}
             styles={inputStyles}
@@ -210,7 +212,7 @@ export default function LoginPage() {
               letterSpacing: '0.01em',
             }}
           >
-            Sign in
+            {t('Sign in')}
           </Button>
         </Stack>
       </form>
@@ -218,7 +220,7 @@ export default function LoginPage() {
       <Divider
         my="xl"
         color="rgba(255,255,255,0.06)"
-        label={<Text size="xs" c="dimmed">Or continue as</Text>}
+        label={<Text size="xs" c="dimmed">{t('Or continue as')}</Text>}
         labelPosition="center"
       />
 
@@ -233,7 +235,7 @@ export default function LoginPage() {
           onMouseEnter={e => e.target.style.color = GREEN}
           onMouseLeave={e => e.target.style.color = ''}
         >
-          Create an account to submit reports →
+          {t('Create an account to submit reports →')}
         </Anchor>
       </Group>
       </Card>

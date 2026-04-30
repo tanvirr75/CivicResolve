@@ -108,7 +108,7 @@ export default function WardDashboard() {
 
   // Priority colour
   const prioColor = (score) =>
-    score >= 4 ? '#ef4444' : score >= 2 ? '#f59e0b' : '#6b7280';
+    score >= 8 ? '#ef4444' : score >= 4 ? '#f59e0b' : '#6b7280';
 
   return (
     <Box>
@@ -152,7 +152,7 @@ export default function WardDashboard() {
           {loading
             ? <Skeleton height={180} radius="xl" />
             : catData.length === 0
-              ? <Text size="sm" c="dimmed" ta="center" mt="xl">No data yet.</Text>
+              ? <Stack align="center" gap="xs" py="xl"><IconChartDonut size={28} color="#444" /><Text size="sm" c="dimmed">No category data yet.</Text></Stack>
               : (
                 <Group align="center" gap="xl">
                   {/* RingProgress as donut proxy */}
@@ -230,7 +230,7 @@ export default function WardDashboard() {
                     </Table.Td>
                     <Table.Td>
                       <Text size="xs" fw={700} style={{ color: prioColor(r.priorityScore) }}>
-                        {r.priorityScore ?? '—'}/5
+                        {r.priorityScore ?? '—'}/10
                       </Text>
                     </Table.Td>
                   </Table.Tr>
@@ -239,7 +239,10 @@ export default function WardDashboard() {
               {!loading && reports.length === 0 && (
                 <Table.Tr>
                   <Table.Td colSpan={3}>
-                    <Text size="xs" c="dimmed" ta="center" py="sm">No reports found for this ward.</Text>
+                    <Stack align="center" gap="xs" py="md">
+                      <IconFileReport size={24} color="#444" />
+                      <Text size="xs" c="dimmed">No reports found for this ward.</Text>
+                    </Stack>
                   </Table.Td>
                 </Table.Tr>
               )}

@@ -2,13 +2,16 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@mantine/core';
 import { IconLanguage } from '@tabler/icons-react';
+import API from '../services/api';
 
 export default function LanguageToggle() {
   const { i18n } = useTranslation();
 
   const toggleLanguage = () => {
-    // Explicitly mutate internal JSON dictionary arrays instantaneously without reloading physics
-    i18n.changeLanguage(i18n.language === 'en' ? 'bn' : 'en');
+    const newLang = i18n.language === 'en' ? 'bn' : 'en';
+    i18n.changeLanguage(newLang);
+    // Persist to server silently (fire-and-forget — non-critical)
+    API.put('/auth/profile', { language: newLang }).catch(() => {});
   };
 
   return (

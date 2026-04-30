@@ -30,8 +30,8 @@ let model  = null;
 if (_serviceAvailable) {
   try {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    // Use the v1beta-compatible model name; falls back gracefully if unavailable
-    model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // Use the latest available Flash model
+    model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
   } catch (initErr) {
     console.warn('[AI] Service init failed:', initErr.message);
     _serviceAvailable = false;
@@ -85,7 +85,7 @@ async function _runPrompt(prompt, timeoutMs = 8000) {
  * @param {string} description
  * @returns {Promise<string|null>} category or null if AI unavailable
  */
-const categorizeReport = async (title, description) => {
+const categorizeReport = async (title, description, imageBase64 = null, mimeType = null) => {
   const prompt = `
 You are an AI assistant for a city issue-reporting platform called CivicResolve.
 Classify the following civic issue into EXACTLY ONE of these categories:
@@ -100,7 +100,17 @@ Report Description: "${description}"
 
 Category:`.trim();
 
-  const raw = await _runPrompt(prompt);
+  const parts = [prompt];
+  if (imageBase64) {
+    parts.push({
+      inlineData: {
+        data: imageBase64,
+        mimeType: mimeType || 'image/jpeg',
+      },
+    });
+  }
+
+  const raw = await _runPrompt(parts);
   if (!raw) return null;
 
   const matched = VALID_CATEGORIES.find(
@@ -111,24 +121,25 @@ Category:`.trim();
 
 // ── FR-08: Estimate Severity ────────────────────────────────────────────────
 /**
- * Estimates issue severity (1–5) from the description and/or image.
- * Returns null if AI unavailable so caller can apply its own default.
+ * Estimates issue severity (1–10) from the description and/or image.
+ * Returns null if AI unavailable so caller can apply its own default (5).
  *
  * @param {string} description
- * @param {string} [imageUrl]
- * @returns {Promise<number|null>} severity 1–5 or null
+ * @param {string|null} [imageBase64]
+ * @param {string|null} [mimeType]
+ * @returns {Promise<number|null>} severity 1–10 or null
  */
-const estimateSeverity = async (description, imageUrl = null) => {
+const estimateSeverity = async (description, imageBase64 = null, mimeType = null) => {
   const prompt = `
-You are a city infrastructure analyst. Rate the severity of this civic issue on a scale of 1 to 5:
-1 = Very minor (cosmetic, no safety risk)
-2 = Minor (inconvenient but safe)
-3 = Moderate (affects daily life)
-4 = Serious (poses some danger)
-5 = Critical (immediate public danger)
+You are a city infrastructure analyst. Rate the severity of this civic issue on a scale of 1 to 10 based on the image (if provided) and description:
+1-2 = Very minor (cosmetic, no safety risk)
+3-4 = Minor (inconvenient but safe)
+5-6 = Moderate (affects daily life)
+7-8 = Serious (poses some danger)
+9-10 = Critical (immediate public danger, emergency)
 
 Rules:
-- Return ONLY a single digit (1, 2, 3, 4, or 5). No explanation.
+- Return ONLY a single number from 1 to 10. No explanation.
 
 Issue Description: "${description || 'No description provided'}"
 
@@ -136,44 +147,20 @@ Severity:`.trim();
 
   let parts = [prompt];
 
-  if (imageUrl) {
-    try {
-      let base64Data;
-      let mimeType = 'image/jpeg';
-      
-      if (imageUrl.startsWith('data:image')) {
-        // Handle data URL directly
-        const matches = imageUrl.match(/^data:(image\/\w+);base64,(.+)$/);
-        if (matches) {
-          mimeType = matches[1];
-          base64Data = matches[2];
-        }
-      } else {
-        // Fetch external URL
-        const imageResp = await fetch(imageUrl);
-        const imageBuffer = await imageResp.arrayBuffer();
-        base64Data = Buffer.from(imageBuffer).toString('base64');
-        mimeType = imageResp.headers.get('content-type') || 'image/jpeg';
-      }
-
-      if (base64Data) {
-        parts.push({
-          inlineData: {
-            data: base64Data,
-            mimeType: mimeType,
-          },
-        });
-      }
-    } catch (err) {
-      console.error('[AI] Failed to process image for severity:', err.message);
-    }
+  if (imageBase64) {
+    parts.push({
+      inlineData: {
+        data: imageBase64,
+        mimeType: mimeType || 'image/jpeg',
+      },
+    });
   }
 
   const raw = await _runPrompt(parts);
   if (!raw) return null;
 
   const parsed = parseInt(raw, 10);
-  return parsed >= 1 && parsed <= 5 ? parsed : null;
+  return parsed >= 1 && parsed <= 10 ? parsed : null;
 };
 
 // ── FR-10: Spam Detection ───────────────────────────────────────────────────
@@ -184,10 +171,11 @@ Severity:`.trim();
  * @param {string} description
  * @returns {Promise<boolean>}
  */
-const detectSpam = async (description) => {
+const detectSpam = async (description, imageBase64 = null, mimeType = null) => {
   const prompt = `
 You are a content moderator for a civic issue-reporting platform.
-Determine if the following description is spam, irrelevant, or not a real civic issue.
+Determine if the following issue is spam, irrelevant, or not a real civic issue.
+Use both the image (if provided) and description.
 
 Rules:
 - Return ONLY "true" (is spam) or "false" (is genuine civic report). No other text.
@@ -196,7 +184,17 @@ Description: "${description}"
 
 Is spam:`.trim();
 
-  const raw = await _runPrompt(prompt);
+  let parts = [prompt];
+  if (imageBase64) {
+    parts.push({
+      inlineData: {
+        data: imageBase64,
+        mimeType: mimeType || 'image/jpeg',
+      },
+    });
+  }
+
+  const raw = await _runPrompt(parts);
   if (!raw) return false; // Fail-open: do not block legitimate reports
 
   return raw.toLowerCase() === 'true';

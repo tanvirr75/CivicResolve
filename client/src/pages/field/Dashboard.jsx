@@ -4,7 +4,7 @@ import {
   Skeleton, ThemeIcon, Anchor,
 } from '@mantine/core';
 import {
-  IconBriefcase, IconClockHour4, IconCircleCheck, IconMapPin,
+  IconBriefcase, IconClockHour4, IconCircleCheck, IconMapPin, IconInbox,
 } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -12,33 +12,33 @@ import API from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
-const GREEN     = '#00FF41';
+const GREEN = '#00FF41';
 const GREEN_DIM = 'rgba(0,255,65,0.10)';
 const GREEN_BDR = 'rgba(0,255,65,0.20)';
-const CARD_BG   = 'rgba(255,255,255,0.03)';
-const BORDER    = 'rgba(255,255,255,0.07)';
+const CARD_BG = 'rgba(255,255,255,0.03)';
+const BORDER = 'rgba(255,255,255,0.07)';
 
 const STATUS_COLOR = {
-  Pending:   'yellow',
+  Pending: 'yellow',
   Completed: 'teal',
   Cancelled: 'red',
 };
 
 const CATEGORY_COLOR = {
-  Road:      '#f59e0b',
-  Waste:     '#ef4444',
-  Drainage:  '#3b82f6',
-  Lighting:  '#fbbf24',
-  Safety:    '#ec4899',
-  Parks:     '#00FF41',
-  Other:     '#8b5cf6',
+  Road: '#f59e0b',
+  Waste: '#ef4444',
+  Drainage: '#3b82f6',
+  Lighting: '#fbbf24',
+  Safety: '#ec4899',
+  Parks: '#00FF41',
+  Other: '#8b5cf6',
 };
 
 // ─── Work order card ──────────────────────────────────────────────────────────
 function WorkOrderCard({ order }) {
-  const report   = order.report ?? {};
+  const report = order.report ?? {};
   const catColor = CATEGORY_COLOR[report.category] ?? '#6366f1';
-  const status   = order.status ?? 'Pending';
+  const status = order.status ?? 'Pending';
 
   return (
     <motion.div whileHover={{ y: -3, scale: 1.01 }} transition={{ duration: 0.18 }}>
@@ -48,13 +48,13 @@ function WorkOrderCard({ order }) {
         p="lg"
         radius="md"
         style={{
-          background:   CARD_BG,
-          border:       `1px solid ${BORDER}`,
-          borderLeft:   `4px solid ${catColor}`,
+          background: CARD_BG,
+          border: `1px solid ${BORDER}`,
+          borderLeft: `4px solid ${catColor}`,
           textDecoration: 'none',
-          display:      'block',
-          transition:   'border-color .2s, box-shadow .2s',
-          cursor:       'pointer',
+          display: 'block',
+          transition: 'border-color .2s, box-shadow .2s',
+          cursor: 'pointer',
         }}
         onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 0 20px ${catColor}22`; }}
         onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
@@ -107,14 +107,14 @@ function WorkOrderCard({ order }) {
 // ─── FieldDashboard ───────────────────────────────────────────────────────────
 export default function FieldDashboard() {
   const { user } = useAuth();
-  const [orders,  setOrders]  = useState([]);
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     try {
       // Fetch work orders assigned to the current worker
-      const res  = await API.get('/work-orders', { params: { assignedTo: 'me', limit: 50 } });
+      const res = await API.get('/work-orders', { params: { assignedTo: 'me', limit: 50 } });
       const list = res.data.data?.workOrders ?? res.data.data?.docs ?? res.data.data ?? [];
       setOrders(Array.isArray(list) ? list : []);
     } catch (err) {
@@ -127,7 +127,7 @@ export default function FieldDashboard() {
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  const pending   = orders.filter(o => o.status === 'Pending');
+  const pending = orders.filter(o => o.status === 'Pending');
   const completed = orders.filter(o => o.status === 'Completed');
 
   return (
@@ -145,9 +145,9 @@ export default function FieldDashboard() {
       {/* Summary strip */}
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md" mb="xl">
         {[
-          { icon: IconBriefcase,   label: 'Total Assigned', value: orders.length,     accent: '#3b82f6' },
-          { icon: IconClockHour4,  label: 'Pending',        value: pending.length,    accent: '#f59e0b' },
-          { icon: IconCircleCheck, label: 'Completed',      value: completed.length,  accent: GREEN },
+          { icon: IconBriefcase, label: 'Total Assigned', value: orders.length, accent: '#3b82f6' },
+          { icon: IconClockHour4, label: 'Pending', value: pending.length, accent: '#f59e0b' },
+          { icon: IconCircleCheck, label: 'Completed', value: completed.length, accent: GREEN },
         ].map(s => (
           <Card key={s.label} p="lg" radius="md"
             style={{ background: CARD_BG, border: `1px solid ${BORDER}`, borderTop: `3px solid ${s.accent}` }}>
@@ -178,8 +178,11 @@ export default function FieldDashboard() {
         </SimpleGrid>
       ) : pending.length === 0 ? (
         <Card p="xl" radius="md" mb="xl"
-          style={{ background: CARD_BG, border: `1px solid ${BORDER}`, textAlign: 'center' }}>
-          <Text c="dimmed" size="sm">No pending work orders. You're all caught up! 🎉</Text>
+          style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+          <Stack align="center" gap="xs">
+            <IconInbox size={32} color="#444" />
+            <Text c="dimmed" size="sm">No pending work orders — you're all caught up.</Text>
+          </Stack>
         </Card>
       ) : (
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md" mb="xl">

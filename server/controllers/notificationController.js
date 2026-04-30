@@ -16,6 +16,7 @@ const getNotifications = async (req, res, next) => {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
+        .populate('report', '_id')
         .lean(),
       Notification.countDocuments({ recipient: req.user._id }),
     ]);

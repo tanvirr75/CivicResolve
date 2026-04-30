@@ -237,4 +237,78 @@ const getWorkOrderById = async (req, res, next) => {
   }
 };
 
-module.exports = { createWorkOrder, submitProofOfFix, getWorkOrders, getWorkOrderById };
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Update work order status (progress updates by field worker)
+// @route   PUT /api/work-orders/:id/status
+// @access  Private (field_worker, system_admin)
+// Allowed transitions: Pending → En Route → In Progress
+// 'Completed' is locked behind submitProofOfFix (requires proof image)
+// ─────────────────────────────────────────────────────────────────────────────
+const ALLOWED_STATUSES = ['Pending', 'En Route', 'In Progress'];
+const STATUS_ORDER = { Pending: 0, 'En Route': 1, 'In Progress': 2, Completed: 3 };
+
+const updateWorkOrderStatus = async (req, res, next) => {
+  try {
+    const { status, note } = req.body;
+
+    if (!ALLOWED_STATUSES.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Allowed values via this endpoint: ${ALLOWED_STATUSES.join(', ')}. Use /complete to submit proof and mark as Completed.`,
+        data: null,
+      });
+    }
+
+    const workOrder = await WorkOrder.findById(req.params.id);
+    if (!workOrder) {
+      return res.status(404).json({ success: false, message: 'Work Order not found.', data: null });
+    }
+
+    // field_worker authorization: only assigned worker may update
+    if (req.user.role === 'field_worker' && workOrder.assignedTo.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Not authorized. You are not assigned to this work order.', data: null });
+    }
+
+    // Enforce forward-only transitions
+    if (STATUS_ORDER[status] <= STATUS_ORDER[workOrder.status]) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot move status backwards. Current status is "${workOrder.status}".`,
+        data: null,
+      });
+    }
+
+    workOrder.status = status;
+    workOrder.statusHistory.push({ status, note: note?.trim() || '', changedAt: new Date() });
+    await workOrder.save();
+
+    // Sync parent report to "In Progress" when field worker begins work
+    if (status === 'In Progress') {
+      try {
+        const report = await Report.findById(workOrder.report);
+        if (report && report.status === 'Assigned') {
+          report.status = 'In Progress';
+          report.statusHistory.push({
+            status    : 'In Progress',
+            changedBy : req.user._id,
+            note      : 'Field worker started work.',
+            changedAt : new Date(),
+          });
+          await report.save();
+        }
+      } catch (syncErr) {
+        logger.error('[WorkOrder] Failed to sync report status to In Progress:', syncErr.message);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Work order status updated to "${status}".`,
+      data: { status: workOrder.status, statusHistory: workOrder.statusHistory },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { createWorkOrder, submitProofOfFix, getWorkOrders, getWorkOrderById, updateWorkOrderStatus };

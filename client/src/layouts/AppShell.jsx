@@ -5,7 +5,6 @@ import {
   Text,
   NavLink,
   Avatar,
-  ActionIcon,
   Burger,
   ScrollArea,
   Divider,
@@ -26,13 +25,11 @@ import {
   IconChartBar,
   IconClipboardList,
   IconLogout,
-  IconSettings,
   IconBriefcase,
   IconNotes,
   IconUserEdit,
 } from '@tabler/icons-react';
 import { useTranslation } from 'react-i18next';
-import i18n from '../i18n';
 import { useAuth } from '../context/AuthContext';
 import NotificationsMenu from '../components/NotificationsMenu';
 import { destroySocket } from '../services/socket';
@@ -90,7 +87,8 @@ const ROLE_LABEL = {
 
 // ─── Sidebar nav items ────────────────────────────────────────────────────────
 function SidebarNavItems({ links, onClose }) {
-  const location = useLocation();
+  const location   = useLocation();
+  const { t }      = useTranslation();
 
   return (
     <Stack gap={2}>
@@ -102,7 +100,7 @@ function SidebarNavItems({ links, onClose }) {
             key={item.label}
             component={Link}
             to={item.to}
-            label={item.label}
+            label={t(item.label)}
             leftSection={<Icon size={18} stroke={1.8} />}
             onClick={onClose}
             active={active}
@@ -132,7 +130,7 @@ export default function CivicAppShell({ children }) {
   const role  = user?.role ?? 'citizen';
   const links = NAV_CONFIG[role] ?? NAV_CONFIG.citizen;
 
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const handleLogout = () => {
     destroySocket();
@@ -203,7 +201,10 @@ export default function CivicAppShell({ children }) {
                 value={i18n.language === 'bn' ? 'bn' : 'en'}
                 onChange={(lang) => {
                   i18n.changeLanguage(lang);
-                  localStorage.setItem('civicresolve_lang', lang);
+                  // Persist to server silently
+                  import('../services/api').then(({ default: API }) => {
+                    API.put('/auth/profile', { language: lang }).catch(() => {});
+                  });
                 }}
                 data={[
                   { label: 'EN',   value: 'en' },
@@ -219,7 +220,7 @@ export default function CivicAppShell({ children }) {
             <NotificationsMenu />
             {user && (
               <Avatar size={32} radius="xl" color="civic" style={{ cursor: 'pointer' }}>
-                {user.name?.charAt(0).toUpperCase() ?? 'U'}
+                {user.name?.[0]?.toUpperCase() || 'U'}
               </Avatar>
             )}
           </Group>
@@ -235,7 +236,7 @@ export default function CivicAppShell({ children }) {
             <Box px="md" py="sm">
               <Group gap="xs" wrap="nowrap">
                 <Avatar size={36} radius="xl" color="civic">
-                  {user.name?.charAt(0).toUpperCase() ?? 'U'}
+                  {user.name?.[0]?.toUpperCase() || 'U'}
                 </Avatar>
                 <Box style={{ overflow: 'hidden' }}>
                   <Text size="sm" fw={600} truncate>
@@ -247,7 +248,7 @@ export default function CivicAppShell({ children }) {
                     variant="light"
                     radius="sm"
                   >
-                    {ROLE_LABEL[role] ?? role}
+                    {t(ROLE_LABEL[role] ?? role)}
                   </Badge>
                 </Box>
               </Group>
@@ -259,7 +260,7 @@ export default function CivicAppShell({ children }) {
             color="rgba(255,255,255,0.06)"
             label={
               <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: '0.06em' }}>
-                Navigation
+                {t('Navigation')}
               </Text>
             }
             labelPosition="left"
@@ -274,22 +275,14 @@ export default function CivicAppShell({ children }) {
 
         {/* Bottom: settings + logout */}
         <Box px="xs" py="sm" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <Stack gap={2}>
-            <NavLink
-              label="Settings"
-              leftSection={<IconSettings size={18} stroke={1.8} />}
-              variant="subtle"
-              style={{ borderRadius: '6px' }}
-            />
-            <NavLink
-              label="Logout"
-              leftSection={<IconLogout size={18} stroke={1.8} />}
-              onClick={handleLogout}
-              variant="subtle"
-              color="red"
-              style={{ borderRadius: '6px' }}
-            />
-          </Stack>
+          <NavLink
+            label={t('Logout')}
+            leftSection={<IconLogout size={18} stroke={1.8} />}
+            onClick={handleLogout}
+            variant="subtle"
+            color="red"
+            style={{ borderRadius: '6px' }}
+          />
         </Box>
       </AppShell.Navbar>
 

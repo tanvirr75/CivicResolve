@@ -76,8 +76,18 @@ const severity = async (req, res, next) => {
       });
     }
 
+    let imageBase64 = null;
+    let mimeType = null;
+    if (imageUrl && imageUrl.startsWith('data:image')) {
+      const matches = imageUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+      if (matches) {
+        mimeType = matches[1];
+        imageBase64 = matches[2];
+      }
+    }
+
     // Use description and image for severity estimation via Gemini Flash
-    const score = await estimateSeverity(description.trim(), imageUrl);
+    const score = await estimateSeverity(description.trim(), imageBase64, mimeType);
 
     if (score === null) {
       return res.status(200).json({
@@ -89,7 +99,7 @@ const severity = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: `AI estimated severity as ${score}/5.`,
+      message: `AI estimated severity as ${score}/10.`,
       data: { severity: score, serviceAvailable: true },
     });
   } catch (err) {

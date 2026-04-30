@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   Box,
   Card,
@@ -13,6 +13,7 @@ import {
   Progress,
   Group,
   Checkbox,
+  Stepper,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import {
@@ -21,15 +22,20 @@ import {
   IconLock,
   IconAlertCircle,
   IconArrowRight,
+  IconArrowLeft,
   IconShieldCheck,
+  IconPhone,
+  IconCalendar,
+  IconDroplet,
 } from '@tabler/icons-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
+import { useTranslation } from 'react-i18next';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import AuthSplitScreen from '../layouts/AuthSplitScreen';
 
-// ─── Design tokens (match LoginPage) ─────────────────────────────────────────
+// ─── Design tokens ─────────────────────────────────────────────────────────────
 const GREEN     = '#00FF41';
 const GREEN_DIM = 'rgba(0,255,65,0.10)';
 const GREEN_BDR = 'rgba(0,255,65,0.30)';
@@ -42,21 +48,12 @@ const inputStyles = {
     border:      `1px solid ${BORDER}`,
     color:       '#e5e5e5',
     fontFamily:  "'Inter', sans-serif",
-    transition:  'border-color 0.18s, box-shadow 0.18s',
-    '&:focus': {
-      borderColor: GREEN,
-      boxShadow:   `0 0 0 2px ${GREEN_DIM}`,
-    },
-    '&:-webkit-autofill, &:-webkit-autofill:hover, &:-webkit-autofill:focus, &:-webkit-autofill:active': {
-      WebkitBoxShadow: '0 0 0 30px #0d0d0d inset !important',
-      WebkitTextFillColor: '#e5e5e5 !important',
-      transition: 'background-color 5000s ease-in-out 0s',
-    },
+    '&:focus': { borderColor: GREEN, boxShadow: `0 0 0 2px ${GREEN_DIM}` },
   },
   label: { color: '#aaa', fontSize: '0.82rem', fontWeight: 500, marginBottom: 6 },
 };
 
-// ─── Password strength meter ──────────────────────────────────────────────────
+// ─── Password strength ────────────────────────────────────────────────────────
 const STRENGTH_CHECKS = [
   { re: /.{8,}/,                     label: 'At least 8 characters' },
   { re: /[0-9]/,                     label: 'Contains a number' },
@@ -67,8 +64,7 @@ const STRENGTH_CHECKS = [
 
 function getStrength(password) {
   if (!password) return 0;
-  const passed = STRENGTH_CHECKS.filter(c => c.re.test(password)).length;
-  return Math.round((passed / STRENGTH_CHECKS.length) * 100);
+  return Math.round((STRENGTH_CHECKS.filter(c => c.re.test(password)).length / STRENGTH_CHECKS.length) * 100);
 }
 
 function strengthColor(pct) {
@@ -77,10 +73,12 @@ function strengthColor(pct) {
   return 'red';
 }
 
-// ─── RegisterPage ─────────────────────────────────────────────────────────────
+// ─── RegisterPage ──────────────────────────────────────────────────────────────
 export default function RegisterPage() {
   const navigate             = useNavigate();
   const { login }            = useAuth();
+  const { t }                = useTranslation();
+  const [step, setStep]      = useState(0);
   const [error, setError]    = useState(null);
   const [loading, setLoading]= useState(false);
 
@@ -99,9 +97,9 @@ export default function RegisterPage() {
       name:  (v) => (v.trim().length >= 2 ? null : 'Full name must be at least 2 characters'),
       email: (v) => (/^\S+@\S+\.\S+$/.test(v.trim()) ? null : 'Enter a valid email address'),
       password: (v) => {
-        if (v.length < 8)            return 'Password must be at least 8 characters';
-        if (!/[A-Z]/.test(v))        return 'Must contain an uppercase letter';
-        if (!/[0-9]/.test(v))        return 'Must contain a number';
+        if (v.length < 8)     return 'Password must be at least 8 characters';
+        if (!/[A-Z]/.test(v)) return 'Must contain an uppercase letter';
+        if (!/[0-9]/.test(v)) return 'Must contain a number';
         return null;
       },
       confirmPassword: (v, values) =>
@@ -112,6 +110,18 @@ export default function RegisterPage() {
 
   const strength = getStrength(form.values.password);
   const color    = strengthColor(strength);
+
+  // ── Step 0 → Step 1 validation ─────────────────────────────────────────────
+  const handleNext = () => {
+    const step0Fields = ['name', 'email', 'password', 'confirmPassword', 'terms'];
+    const hasErrors = step0Fields
+      .map(f => form.validateField(f))
+      .some(r => r.hasError);
+    if (!hasErrors) {
+      setError(null);
+      setStep(1);
+    }
+  };
 
   const handleSubmit = async (values) => {
     setError(null);
@@ -124,7 +134,7 @@ export default function RegisterPage() {
         dob:        values.dob,
         bloodGroup: values.bloodGroup.trim(),
         password:   values.password,
-        role:       'citizen',   // Only citizens can self-register; other roles are admin-created
+        role:       'citizen',
       });
 
       const { token, user } = res.data.data;
@@ -138,10 +148,10 @@ export default function RegisterPage() {
       });
 
       navigate('/citizen/dashboard', { replace: true });
-
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Registration failed. Please try again.';
       setError(msg);
+      setStep(0); // bounce back to step 0 on server error
     } finally {
       setLoading(false);
     }
@@ -149,7 +159,7 @@ export default function RegisterPage() {
 
   return (
     <AuthSplitScreen>
-      {/* Mobile Logo (hidden on desktop) */}
+      {/* Mobile logo */}
       <Text
         component={Link}
         to="/"
@@ -171,30 +181,40 @@ export default function RegisterPage() {
 
       <Card
         w="100%"
-        maw={440}
+        maw={460}
         p="xl"
         radius="md"
-        style={{
-          background: CARD_BG,
-          border:     `1px solid ${BORDER}`,
-          boxShadow:  '0 24px 64px rgba(0,0,0,0.5)',
-        }}
+        style={{ background: CARD_BG, border: `1px solid ${BORDER}`, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
       >
         {/* Header */}
-        <Stack gap="xs" mb="xl">
+        <Stack gap="xs" mb="lg">
           <Title
             order={2}
             style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#fff', letterSpacing: '-0.02em' }}
           >
-            Create account
+            {t('Create account')}
           </Title>
           <Text size="sm" c="dimmed">
-            Already registered?{' '}
+            {t('Already registered?')}{' '}
             <Anchor component={Link} to="/login" c="civic.4" size="sm" underline="never">
-              Sign in →
+              {t('Sign in →')}
             </Anchor>
           </Text>
         </Stack>
+
+        {/* Stepper */}
+        <Stepper
+          active={step}
+          size="xs"
+          mb="lg"
+          styles={{
+            stepIcon:  { background: 'rgba(255,255,255,0.05)', border: `1px solid ${BORDER}`, color: '#888' },
+            separator: { background: BORDER },
+          }}
+        >
+          <Stepper.Step label={t('Account')} description={t('Login credentials')} />
+          <Stepper.Step label={t('Profile')}  description={t('Optional details')} />
+        </Stepper>
 
         {/* Citizen-only note */}
         <Alert
@@ -211,7 +231,7 @@ export default function RegisterPage() {
           </Text>
         </Alert>
 
-        {/* Error */}
+        {/* Server error */}
         {error && (
           <Alert
             icon={<IconAlertCircle size={16} />}
@@ -228,131 +248,172 @@ export default function RegisterPage() {
         )}
 
         <form onSubmit={form.onSubmit(handleSubmit)}>
-          <Stack gap="md">
-            {/* Name */}
-            <TextInput
-              label="Full name"
-              placeholder="Alex Rahman"
-              autoComplete="name"
-              leftSection={<IconUser size={16} color="#666" />}
-              styles={inputStyles}
-              {...form.getInputProps('name')}
-            />
-
-            {/* Email */}
-            <TextInput
-              label="Email address"
-              placeholder="you@example.com"
-              autoComplete="email"
-              leftSection={<IconMail size={16} color="#666" />}
-              styles={inputStyles}
-              {...form.getInputProps('email')}
-            />
-
-            <Group grow>
+          {/* ── Step 0: credentials ─────────────────────────────────────── */}
+          {step === 0 && (
+            <Stack gap="md">
               <TextInput
-                label="Phone Number"
-                placeholder="+88017..."
+                label={t('Full name')}
+                placeholder="Alex Rahman"
+                autoComplete="name"
+                leftSection={<IconUser size={16} color="#666" />}
                 styles={inputStyles}
-                {...form.getInputProps('phone')}
+                {...form.getInputProps('name')}
               />
+
               <TextInput
-                label="Date of Birth"
-                type="date"
+                label={t('Email address')}
+                placeholder="you@example.com"
+                autoComplete="email"
+                leftSection={<IconMail size={16} color="#666" />}
                 styles={inputStyles}
-                {...form.getInputProps('dob')}
+                {...form.getInputProps('email')}
               />
-            </Group>
 
-            <TextInput
-              label="Blood Group"
-              placeholder="A+, O-, etc"
-              styles={inputStyles}
-              {...form.getInputProps('bloodGroup')}
-            />
+              {/* Password + strength meter */}
+              <Box>
+                <PasswordInput
+                  label="Password"
+                  placeholder="Min. 8 chars, 1 uppercase, 1 number"
+                  autoComplete="new-password"
+                  leftSection={<IconLock size={16} color="#666" />}
+                  styles={inputStyles}
+                  {...form.getInputProps('password')}
+                />
+                {form.values.password.length > 0 && (
+                  <Box mt={8}>
+                    <Progress
+                      value={strength}
+                      color={color}
+                      size={4}
+                      radius="xl"
+                      style={{ background: 'rgba(255,255,255,0.07)' }}
+                    />
+                    <Text
+                      size="xs"
+                      mt={4}
+                      c={strength === 100 ? 'teal' : strength >= 60 ? 'yellow' : 'red'}
+                    >
+                      {strength === 100
+                        ? t('✓ Strong password')
+                        : strength >= 60
+                        ? t('Moderate — add uppercase or special characters')
+                        : t('Weak — add numbers and uppercase letters')}
+                    </Text>
+                  </Box>
+                )}
+              </Box>
 
-            {/* Password + strength meter */}
-            <Box>
               <PasswordInput
-                label="Password"
-                placeholder="Min. 8 characters, 1 uppercase, 1 number"
+                label={t('Confirm password')}
+                placeholder="••••••••"
                 autoComplete="new-password"
                 leftSection={<IconLock size={16} color="#666" />}
                 styles={inputStyles}
-                {...form.getInputProps('password')}
+                {...form.getInputProps('confirmPassword')}
               />
-              {form.values.password.length > 0 && (
-                <Box mt={8}>
-                  <Progress
-                    value={strength}
-                    color={color}
-                    size={4}
-                    radius="xl"
-                    style={{ background: 'rgba(255,255,255,0.07)' }}
-                  />
-                  <Text
-                    size="xs"
-                    mt={4}
-                    c={strength === 100 ? 'teal' : strength >= 60 ? 'yellow' : 'red'}
-                    style={{ fontFamily: "'Inter', sans-serif" }}
-                  >
-                    {strength === 100
-                      ? '✓ Strong password'
-                      : strength >= 60
-                      ? 'Moderate — add uppercase or special characters'
-                      : 'Weak — add numbers and uppercase letters'}
+
+              <Checkbox
+                label={
+                  <Text size="sm" c="dimmed">
+                    I agree to the{' '}
+                    <Anchor c="civic.4" size="sm" underline="never" href="#">Terms of Service</Anchor>
+                    {' '}and{' '}
+                    <Anchor c="civic.4" size="sm" underline="never" href="#">Privacy Policy</Anchor>
                   </Text>
-                </Box>
-              )}
-            </Box>
+                }
+                color="civic"
+                {...form.getInputProps('terms', { type: 'checkbox' })}
+              />
 
-            {/* Confirm password */}
-            <PasswordInput
-              label="Confirm password"
-              placeholder="Re-enter password"
-              autoComplete="new-password"
-              leftSection={<IconLock size={16} color="#666" />}
-              styles={inputStyles}
-              {...form.getInputProps('confirmPassword')}
-            />
+              <Button
+                fullWidth
+                size="md"
+                color="civic"
+                radius="md"
+                rightSection={<IconArrowRight size={16} />}
+                onClick={handleNext}
+                style={{
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontWeight: 700,
+                  marginTop: 4,
+                  boxShadow: `0 0 20px rgba(0,255,65,0.25)`,
+                }}
+              >
+                {t('Continue')}
+              </Button>
+            </Stack>
+          )}
 
-            {/* Terms */}
-            <Checkbox
-              label={
-                <Text size="sm" c="dimmed">
-                  I agree to the{' '}
-                  <Anchor c="civic.4" size="sm" underline="never" href="#">
-                    Terms of Service
-                  </Anchor>{' '}
-                  and{' '}
-                  <Anchor c="civic.4" size="sm" underline="never" href="#">
-                    Privacy Policy
-                  </Anchor>
-                </Text>
-              }
-              color="civic"
-              {...form.getInputProps('terms', { type: 'checkbox' })}
-            />
+          {/* ── Step 1: optional profile details ──────────────────────── */}
+          {step === 1 && (
+            <Stack gap="md">
+              <Text size="xs" c="dimmed" mb={4}>
+                These fields are optional — you can fill them in from your profile later.
+              </Text>
 
-            <Button
-              type="submit"
-              fullWidth
-              size="md"
-              color="civic"
-              radius="md"
-              loading={loading}
-              rightSection={!loading && <IconArrowRight size={16} />}
-              style={{
-                fontFamily:    "'Space Grotesk', sans-serif",
-                fontWeight:    700,
-                marginTop:     4,
-                boxShadow:     `0 0 20px rgba(0,255,65,0.25)`,
-                letterSpacing: '0.01em',
-              }}
-            >
-              Create account
-            </Button>
-          </Stack>
+              <TextInput
+                label={t('Phone Number')}
+                placeholder="+88017..."
+                leftSection={<IconPhone size={16} color="#666" />}
+                styles={inputStyles}
+                {...form.getInputProps('phone')}
+              />
+
+              <Group grow>
+                <TextInput
+                  label={t('Date of Birth')}
+                  type="date"
+                  leftSection={<IconCalendar size={16} color="#666" />}
+                  styles={inputStyles}
+                  {...form.getInputProps('dob')}
+                />
+                <TextInput
+                  label={t('Blood Group')}
+                  placeholder="A+, O−, etc."
+                  leftSection={<IconDroplet size={16} color="#666" />}
+                  styles={inputStyles}
+                  {...form.getInputProps('bloodGroup')}
+                />
+              </Group>
+
+              <Group grow mt={4}>
+                <Button
+                  variant="subtle"
+                  color="gray"
+                  radius="md"
+                  leftSection={<IconArrowLeft size={16} />}
+                  onClick={() => setStep(0)}
+                >
+                  {t('Back')}
+                </Button>
+                <Button
+                  type="submit"
+                  size="md"
+                  color="civic"
+                  radius="md"
+                  loading={loading}
+                  rightSection={!loading && <IconArrowRight size={16} />}
+                  style={{
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontWeight: 700,
+                    boxShadow: `0 0 20px rgba(0,255,65,0.25)`,
+                  }}
+                >
+                  {t('Create account')}
+                </Button>
+              </Group>
+
+              <Text
+                size="xs"
+                c="dimmed"
+                ta="center"
+                style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                onClick={() => form.onSubmit(handleSubmit)()}
+              >
+                {t('Skip and create with just credentials →')}
+              </Text>
+            </Stack>
+          )}
         </form>
       </Card>
     </AuthSplitScreen>

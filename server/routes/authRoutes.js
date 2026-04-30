@@ -1,6 +1,6 @@
 const express = require('express');
 const { body }  = require('express-validator');
-const { register, login, getMe, logout, getFieldWorkers, getUsers, updateUserRole, toggleUserActive } = require('../controllers/authController');
+const { register, login, getMe, logout, getFieldWorkers, getUsers, updateUserRole, toggleUserActive, resetUserPassword, changePassword } = require('../controllers/authController');
 const { authenticate, authorize } = require('../middleware/authenticate');
 
 const router = express.Router();
@@ -125,5 +125,11 @@ router.patch('/users/:id/role', authenticate, authorize('system_admin'), updateU
 
 // PUT /api/auth/users/:id/deactivate — toggle isActive (system_admin only)
 router.put('/users/:id/deactivate', authenticate, authorize('system_admin'), toggleUserActive);
+
+// PUT /api/auth/users/:id/reset-password — generate temp password (system_admin only)
+router.put('/users/:id/reset-password', authenticate, authorize('system_admin'), resetUserPassword);
+
+// PUT /api/auth/change-password — change own password (any authenticated user)
+router.put('/change-password', authenticate, changePassword);
 
 module.exports = router;

@@ -13,23 +13,22 @@ import { useEffect, useRef } from 'react';
 let _socket = null;
 
 export function getSocket() {
+  const token = localStorage.getItem('token');
+  if (!token) return null;
   if (_socket) return _socket;
 
-  const token   = localStorage.getItem('token');
-  const baseUrl = import.meta.env.VITE_SOCKET_URL || 
+  const baseUrl = import.meta.env.VITE_SOCKET_URL ||
                  (import.meta.env.VITE_API_BASE_URL ? import.meta.env.VITE_API_BASE_URL.replace('/api', '') : undefined);
 
   _socket = io(baseUrl, {
     transports: ['websocket'],
     auth: { token },
-    // Reconnect automatically
     reconnection:       true,
     reconnectionDelay:  1000,
     reconnectionDelays: 5000,
   });
 
   _socket.on('connect', () => {
-    // Re-join user room after reconnect
     const stored = localStorage.getItem('token');
     if (stored) {
       try {
@@ -61,12 +60,13 @@ export function destroySocket() {
  * @param {Object} [events]  — { eventName: handler } map — registered on mount, cleaned on unmount.
  */
 export function useSocket(userId, events = {}) {
-  const socket     = getSocket();
-  // Keep a stable ref to events so the cleanup always matches what was registered
-  const eventsRef  = useRef(events);
+  const eventsRef = useRef(events);
   eventsRef.current = events;
 
   useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
     if (userId) socket.emit('joinRoom', userId);
 
     const handlers = { ...eventsRef.current };
@@ -74,9 +74,8 @@ export function useSocket(userId, events = {}) {
 
     return () => {
       Object.entries(handlers).forEach(([evt, fn]) => socket.off(evt, fn));
-      // NOTE: we do NOT call socket.disconnect() here — singleton lives on.
     };
-  }, [socket, userId]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [userId]);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  return socket;
+  return getSocket();
 }

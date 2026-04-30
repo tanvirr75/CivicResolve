@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Box, Title, Text, Group, Stack, SimpleGrid, Card, Badge,
-  Switch, ThemeIcon, Table, Skeleton, Progress,
+  Switch, ThemeIcon, Table, Skeleton, Progress, TextInput, Button,
 } from '@mantine/core';
 import { MapContainer, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { IconFlame, IconChartPie, IconMap } from '@tabler/icons-react';
+import { IconFlame, IconChartPie, IconMap, IconCalendar, IconX } from '@tabler/icons-react';
 import { motion } from 'framer-motion';
 import API from '../../services/api';
 
@@ -17,6 +17,11 @@ const GREEN_BDR = 'rgba(0,255,65,0.20)';
 const CARD_BG   = 'rgba(255,255,255,0.03)';
 const BORDER    = 'rgba(255,255,255,0.07)';
 
+const inputSm = {
+  input: { background: 'rgba(255,255,255,0.04)', border: `1px solid ${BORDER}`, color: '#e5e5e5', fontSize: '0.82rem' },
+  label: { color: '#888', fontSize: '0.78rem', fontWeight: 500, marginBottom: 4 },
+};
+
 const CAT_PALETTE = [
   '#00FF41', '#3b82f6', '#f59e0b', '#ef4444',
   '#a855f7', '#ec4899', '#06b6d4', '#84cc16',
@@ -24,7 +29,7 @@ const CAT_PALETTE = [
 
 // ─── Heatmap layer ────────────────────────────────────────────────────────────
 function HeatLayer({ points }) {
-  const map    = useMap();
+  const map     = useMap();
   const heatRef = useRef(null);
 
   useEffect(() => {
@@ -57,7 +62,7 @@ function DonutSlice({ cx, cy, r, startAngle, endAngle, color }) {
 
 function PieChart({ data }) {
   if (!data?.length) return <Skeleton height={180} radius="xl" />;
-  const total  = data.reduce((s, d) => s + d.count, 0) || 1;
+  const total = data.reduce((s, d) => s + d.count, 0) || 1;
   const CX = 90, CY = 90, R = 75;
   let angle = 0;
   const slices = data.map((d, i) => {
@@ -94,63 +99,21 @@ function PieChart({ data }) {
 
 // ─── Analytics ───────────────────────────────────────────────────────────────
 export default function Analytics() {
-  const [reports,    setReports]    = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [heatmap,    setHeatmap]    = useState(true);
-  const [catData,    setCatData]    = useState([]);
-  const [wardData,   setWardData]   = useState([]);
-  const [heatPoints, setHeatPoints] = useState([]);
+  const [analytics, setAnalytics] = useState({ catCounts: [], wardStats: [], heatPoints: [], total: 0 });
+  const [loading,   setLoading]   = useState(true);
+  const [heatmap,   setHeatmap]   = useState(true);
 
-  const fetchAll = useCallback(async () => {
+  const [fromDate, setFromDate] = useState('');
+  const [toDate,   setToDate]   = useState('');
+
+  const fetchAnalytics = useCallback(async (from, to) => {
     setLoading(true);
     try {
-      const res    = await API.get('/reports', { params: { limit: 300 } });
-      const list   = res.data.data.reports ?? res.data.data.docs ?? [];
-      setReports(list);
-
-      // Heat points [lat, lng, intensity]
-      setHeatPoints(
-        list
-          .filter(r => r?.location?.coordinates || (r.latitude && r.longitude))
-          .map(r => {
-            const lat = r.latitude  ?? r.location?.coordinates?.[1];
-            const lng = r.longitude ?? r.location?.coordinates?.[0];
-            return [lat, lng, 1];
-          })
-          .filter(p => p[0] && p[1])
-      );
-
-      // Category breakdown
-      const catMap = {};
-      list.forEach(r => { if (r.category) catMap[r.category] = (catMap[r.category] ?? 0) + 1; });
-      setCatData(
-        Object.entries(catMap)
-          .map(([label, count]) => ({ label, count }))
-          .sort((a, b) => b.count - a.count)
-      );
-
-      // Ward performance
-      const wardMap = {};
-      list.forEach(r => {
-        const wid = r.wardId ?? 'Unknown';
-        if (!wardMap[wid]) wardMap[wid] = { total: 0, resolved: 0, resHours: [] };
-        wardMap[wid].total++;
-        if (r.status === 'Resolved') {
-          wardMap[wid].resolved++;
-          if (r.resolutionTimeHours) wardMap[wid].resHours.push(r.resolutionTimeHours);
-        }
-      });
-      setWardData(
-        Object.entries(wardMap).map(([ward, d]) => ({
-          ward,
-          total:    d.total,
-          resolved: d.resolved,
-          pct:      Math.round((d.resolved / d.total) * 100),
-          avgHrs:   d.resHours.length
-            ? (d.resHours.reduce((s, h) => s + h, 0) / d.resHours.length).toFixed(1)
-            : '—',
-        })).sort((a, b) => b.total - a.total)
-      );
+      const params = {};
+      if (from) params.from = from;
+      if (to)   params.to   = to;
+      const res = await API.get('/reports/analytics', { params });
+      setAnalytics(res.data.data ?? { catCounts: [], wardStats: [], heatPoints: [], total: 0 });
     } catch (err) {
       console.error('Analytics error:', err);
     } finally {
@@ -158,7 +121,21 @@ export default function Analytics() {
     }
   }, []);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => { fetchAnalytics(fromDate, toDate); }, [fetchAnalytics, fromDate, toDate]);
+
+  const isFiltered = fromDate || toDate;
+
+  // Ward stats with derived pct + avgHrs
+  const wardData = useMemo(() =>
+    analytics.wardStats.map(w => ({
+      ...w,
+      pct:    Math.round((w.resolved / w.total) * 100),
+      avgHrs: w.resHoursArr?.length
+        ? (w.resHoursArr.reduce((s, h) => s + h, 0) / w.resHoursArr.length).toFixed(1)
+        : '—',
+    })),
+    [analytics.wardStats]
+  );
 
   return (
     <Box>
@@ -168,15 +145,59 @@ export default function Analytics() {
           Analytics
         </Title>
         <Text size="sm" c="dimmed" mt={4}>
-          Platform-wide spatial and categorical insights — {reports.length} reports loaded.
+          Platform-wide spatial and categorical insights —{' '}
+          {loading ? '…' : `${analytics.total} report${analytics.total !== 1 ? 's' : ''}`} shown.
         </Text>
       </Box>
+
+      {/* ── Date range filter bar ─────────────────────────────────────────────── */}
+      <Card p="md" radius="md" mb="xl" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+        <Group gap="md" wrap="wrap" align="flex-end">
+          <ThemeIcon size={32} radius="md" style={{ background: GREEN_DIM, border: `1px solid ${GREEN_BDR}`, color: GREEN }}>
+            <IconCalendar size={16} />
+          </ThemeIcon>
+          <TextInput
+            size="xs"
+            type="date"
+            label="From"
+            w={160}
+            value={fromDate}
+            onChange={e => setFromDate(e.target.value)}
+            styles={inputSm}
+          />
+          <TextInput
+            size="xs"
+            type="date"
+            label="To"
+            w={160}
+            value={toDate}
+            onChange={e => setToDate(e.target.value)}
+            styles={inputSm}
+          />
+          {isFiltered && (
+            <Button
+              size="xs"
+              variant="subtle"
+              color="red"
+              radius="md"
+              leftSection={<IconX size={12} />}
+              onClick={() => { setFromDate(''); setToDate(''); }}
+            >
+              Clear
+            </Button>
+          )}
+          {isFiltered && !loading && (
+            <Badge size="sm" color="civic" variant="light">
+              {analytics.total} report{analytics.total !== 1 ? 's' : ''} in range
+            </Badge>
+          )}
+        </Group>
+      </Card>
 
       {/* ── Full-screen heatmap ─────────────────────────────────────────────── */}
       <Card p={0} radius="md" mb="xl"
         style={{ border: `1px solid ${GREEN_BDR}`, overflow: 'hidden', position: 'relative' }}>
 
-        {/* Heatmap toggle */}
         <motion.div
           initial={{ y: -10, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -211,7 +232,7 @@ export default function Analytics() {
                   url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
                   attribution='&copy; <a href="https://carto.com/">CARTO</a>'
                 />
-                {heatmap && heatPoints.length > 0 && <HeatLayer points={heatPoints} />}
+                {heatmap && analytics.heatPoints.length > 0 && <HeatLayer points={analytics.heatPoints} />}
               </MapContainer>
             )
           }
@@ -221,33 +242,26 @@ export default function Analytics() {
       {/* ── Charts row ─────────────────────────────────────────────────────── */}
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="xl" mb="xl">
 
-        {/* Category pie */}
         <Card p="xl" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
           <Group gap="xs" mb="lg">
             <IconChartPie size={18} color={GREEN} />
-            <Title order={5}
-              style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#fff' }}>
+            <Title order={5} style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#fff' }}>
               Category Breakdown
             </Title>
           </Group>
-          {loading
-            ? <Skeleton height={180} radius="xl" />
-            : <PieChart data={catData} />
-          }
+          {loading ? <Skeleton height={180} radius="xl" /> : <PieChart data={analytics.catCounts} />}
         </Card>
 
-        {/* Category bar */}
         <Card p="xl" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
-          <Title order={5} mb="lg"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#fff' }}>
+          <Title order={5} mb="lg" style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#fff' }}>
             Volume by Category
           </Title>
           {loading
             ? <Skeleton height={180} />
             : (
               <Stack gap="sm">
-                {catData.map((c, i) => {
-                  const max = catData[0]?.count || 1;
+                {analytics.catCounts.map((c, i) => {
+                  const max = analytics.catCounts[0]?.count || 1;
                   return (
                     <Box key={c.label}>
                       <Group justify="space-between" mb={4}>
@@ -310,22 +324,18 @@ export default function Analytics() {
                 <Table.Tr>
                   <Table.Td colSpan={5}>
                     <Text size="sm" c="dimmed" ta="center" py="xl">
-                      No ward data — reports will appear here as they are submitted with ward assignments.
+                      {isFiltered
+                        ? 'No ward data in the selected date range.'
+                        : 'No ward data — reports will appear here as they are submitted.'}
                     </Text>
                   </Table.Td>
                 </Table.Tr>
               )
               : wardData.map(w => (
                   <Table.Tr key={w.ward}>
-                    <Table.Td>
-                      <Text size="sm" fw={600} c="white">{w.ward}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" c="dimmed">{w.total}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Badge size="sm" color="teal" variant="light">{w.resolved}</Badge>
-                    </Table.Td>
+                    <Table.Td><Text size="sm" fw={600} c="white">{w.ward}</Text></Table.Td>
+                    <Table.Td><Text size="sm" c="dimmed">{w.total}</Text></Table.Td>
+                    <Table.Td><Badge size="sm" color="teal" variant="light">{w.resolved}</Badge></Table.Td>
                     <Table.Td>
                       <Group gap="sm" align="center">
                         <Progress

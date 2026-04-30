@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Title, Text, Group, Stack, Badge, Card, Table, Anchor,
-  Skeleton, Select, Button, Modal, Pagination, TextInput,
+  Skeleton, Select, Button, Modal, Pagination, TextInput, ScrollArea,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconExternalLink, IconUsers, IconCalendar } from '@tabler/icons-react';
+import { IconExternalLink, IconUsers, IconCalendar, IconInbox, IconSearch } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { notifications } from '@mantine/notifications';
@@ -24,7 +24,7 @@ const STATUS_COLOR = {
 };
 
 const PRIO_COLOR = (s) =>
-  s >= 4 ? '#ef4444' : s >= 2 ? '#f59e0b' : '#6b7280';
+  s >= 8 ? '#ef4444' : s >= 4 ? '#f59e0b' : '#6b7280';
 
 const inputSm = {
   input: { background: 'rgba(255,255,255,0.04)', border: `1px solid ${BORDER}`, color: '#e5e5e5', fontSize: '0.82rem' },
@@ -47,6 +47,7 @@ export default function ReportsList() {
   const [statusF, setStatusF] = useState(null);
   const [categoryF, setCategoryF] = useState(null);
   const [dateRange, setDateRange] = useState([null, null]);
+  const [searchQ, setSearchQ] = useState('');
 
   // ── Assign modal ──────────────────────────────────────────────────────────
   const [assignModal, { open: openAssign, close: closeAssign }] = useDisclosure(false);
@@ -61,10 +62,11 @@ export default function ReportsList() {
     try {
       const params = { page, limit: LIMIT, sort: '-priorityScore' };
       if (user?.wardId) params.wardId = user.wardId;
-      if (statusF) params.status = statusF;
-      if (categoryF) params.category = categoryF;
+      if (statusF)     params.status   = statusF;
+      if (categoryF)   params.category = categoryF;
+      if (searchQ.trim()) params.q = searchQ.trim();
       if (dateRange[0]) params.from = dateRange[0].toISOString();
-      if (dateRange[1]) params.to = dateRange[1].toISOString();
+      if (dateRange[1]) params.to   = dateRange[1].toISOString();
 
       const res = await API.get('/reports', { params });
       const data = res.data.data;
@@ -75,7 +77,7 @@ export default function ReportsList() {
     } finally {
       setLoading(false);
     }
-  }, [page, statusF, categoryF, dateRange, user]);
+  }, [page, statusF, categoryF, searchQ, dateRange, user]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
@@ -136,7 +138,16 @@ export default function ReportsList() {
       </Table.Tr>
     ))
     : reports.map(r => (
-      <Table.Tr key={r._id}>
+      <Table.Tr
+        key={r._id}
+        style={{
+          borderLeft: r.priorityScore >= 8
+            ? '3px solid #ef4444'
+            : r.priorityScore >= 4
+            ? '3px solid #f59e0b'
+            : '3px solid transparent',
+        }}
+      >
         <Table.Td>
           <Anchor component={Link} to={`/ward/reports/${r._id}`}
             size="sm" c="white" fw={600} underline="never"
@@ -155,7 +166,7 @@ export default function ReportsList() {
         </Table.Td>
         <Table.Td>
           <Text size="sm" fw={700} style={{ color: PRIO_COLOR(r.priorityScore) }}>
-            {r.priorityScore ?? '—'}/5
+            {r.priorityScore ?? '—'}/10
           </Text>
         </Table.Td>
         <Table.Td>
@@ -193,6 +204,14 @@ export default function ReportsList() {
       {/* Filter bar */}
       <Card p="md" radius="md" mb="lg" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
         <Group gap="md" wrap="wrap">
+          <TextInput
+            size="xs" w={180}
+            placeholder="Search title or description…"
+            leftSection={<IconSearch size={12} />}
+            value={searchQ}
+            onChange={e => { setSearchQ(e.currentTarget.value); setPage(1); }}
+            styles={inputSm}
+          />
           <Select size="xs" w={140} placeholder="All statuses" clearable radius="md"
             data={['Open', 'Assigned', 'In Progress', 'Resolved']}
             value={statusF} onChange={v => { setStatusF(v); setPage(1); }}
@@ -202,7 +221,7 @@ export default function ReportsList() {
             value={categoryF} onChange={v => { setCategoryF(v); setPage(1); }}
             styles={inputSm} />
           <TextInput
-            size="xs" w={140} type="date"
+            size="xs" w={130} type="date"
             placeholder="From"
             leftSection={<IconCalendar size={12} />}
             value={dateRange[0] ? dateRange[0].toISOString().split('T')[0] : ''}
@@ -214,7 +233,7 @@ export default function ReportsList() {
             styles={inputSm}
           />
           <TextInput
-            size="xs" w={140} type="date"
+            size="xs" w={130} type="date"
             placeholder="To"
             leftSection={<IconCalendar size={12} />}
             value={dateRange[1] ? dateRange[1].toISOString().split('T')[0] : ''}
@@ -226,7 +245,7 @@ export default function ReportsList() {
             styles={inputSm}
           />
           <Button size="xs" variant="subtle" color="red" radius="md"
-            onClick={() => { setStatusF(null); setCategoryF(null); setDateRange([null, null]); setPage(1); }}>
+            onClick={() => { setStatusF(null); setCategoryF(null); setSearchQ(''); setDateRange([null, null]); setPage(1); }}>
             Clear filters
           </Button>
         </Group>
@@ -234,33 +253,38 @@ export default function ReportsList() {
 
       {/* Table */}
       <Card p="lg" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
-        <Table
-          styles={{
-            th: { color: '#555', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${BORDER}`, paddingBottom: 10 },
-            td: { borderBottom: `1px solid rgba(255,255,255,0.04)`, paddingTop: 11, paddingBottom: 11 },
-          }}
-        >
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Title</Table.Th>
-              <Table.Th>Category</Table.Th>
-              <Table.Th>Status</Table.Th>
-              <Table.Th>Priority</Table.Th>
-              <Table.Th>Submitted By</Table.Th>
-              <Table.Th>Assigned To</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {rows}
-            {!loading && reports.length === 0 && (
+        <ScrollArea type="scroll" scrollbars="x">
+          <Table
+            styles={{
+              th: { color: '#555', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${BORDER}`, paddingBottom: 10 },
+              td: { borderBottom: `1px solid rgba(255,255,255,0.04)`, paddingTop: 11, paddingBottom: 11 },
+            }}
+          >
+            <Table.Thead>
               <Table.Tr>
-                <Table.Td colSpan={6}>
-                  <Text size="sm" c="dimmed" ta="center" py="xl">No reports match the current filters.</Text>
-                </Table.Td>
+                <Table.Th>Title</Table.Th>
+                <Table.Th>Category</Table.Th>
+                <Table.Th>Status</Table.Th>
+                <Table.Th>Priority</Table.Th>
+                <Table.Th>Submitted By</Table.Th>
+                <Table.Th>Assigned To</Table.Th>
               </Table.Tr>
-            )}
-          </Table.Tbody>
-        </Table>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows}
+              {!loading && reports.length === 0 && (
+                <Table.Tr>
+                  <Table.Td colSpan={6}>
+                    <Stack align="center" gap="xs" py="xl">
+                      <IconInbox size={32} color="#444" />
+                      <Text size="sm" c="dimmed">No reports match the current filters.</Text>
+                    </Stack>
+                  </Table.Td>
+                </Table.Tr>
+              )}
+            </Table.Tbody>
+          </Table>
+        </ScrollArea>
 
         {total > 1 && (
           <Group justify="center" mt="lg">

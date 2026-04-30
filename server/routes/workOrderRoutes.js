@@ -1,6 +1,6 @@
 const express = require('express');
 const { body } = require('express-validator');
-const { createWorkOrder, submitProofOfFix, getWorkOrders, getWorkOrderById } = require('../controllers/workOrderController');
+const { createWorkOrder, submitProofOfFix, getWorkOrders, getWorkOrderById, updateWorkOrderStatus } = require('../controllers/workOrderController');
 const { authenticate, authorize } = require('../middleware/authenticate');
 const { uploadSingle } = require('../middleware/upload');
 
@@ -42,6 +42,14 @@ router.put(
   authorize('field_worker', 'system_admin'),
   uploadSingle('image'), // Expects form-data with an "image" file
   submitProofOfFix
+);
+
+// PUT /api/work-orders/:id/status — field worker advances progress (no proof required)
+router.put(
+  '/:id/status',
+  authenticate,
+  authorize('field_worker', 'system_admin'),
+  updateWorkOrderStatus
 );
 
 module.exports = router;

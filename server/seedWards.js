@@ -1,7 +1,7 @@
 require('dotenv').config({ path: '../.env' });
-const mongoose  = require('mongoose');
+const mongoose = require('mongoose');
 const WardBoundary = require('./models/WardBoundary');
-const User      = require('./models/User');
+const User = require('./models/User');
 
 /**
  * Ward Seeder — CivicResolve

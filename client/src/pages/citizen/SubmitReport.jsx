@@ -15,6 +15,7 @@ import {
 } from '@tabler/icons-react';
 import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
+import { useTranslation } from 'react-i18next';
 import API from '../../services/api';
 
 // ── Leaflet icon fix ──────────────────────────────────────────────────────────
@@ -38,11 +39,16 @@ const inputStyles = {
 
 // ─── Severity config (FR-08) ──────────────────────────────────────────────────
 const SEVERITY_CONFIG = {
-  1: { label: 'Low',      color: 'green'  },
-  2: { label: 'Minor',    color: 'teal'   },
-  3: { label: 'Moderate', color: 'yellow' },
-  4: { label: 'High',     color: 'orange' },
-  5: { label: 'Critical', color: 'red'    },
+  1: { label: 'Very Low', color: 'gray'   },
+  2: { label: 'Low',      color: 'green'  },
+  3: { label: 'Minor',    color: 'teal'   },
+  4: { label: 'Moderate', color: 'blue'   },
+  5: { label: 'Noticeable', color: 'yellow' },
+  6: { label: 'Significant', color: 'orange' },
+  7: { label: 'High',     color: 'pink'   },
+  8: { label: 'Severe',   color: 'red'    },
+  9: { label: 'Critical', color: 'darkred'},
+  10:{ label: 'Emergency',color: 'purple' },
 };
 
 // ─── Step labels ──────────────────────────────────────────────────────────────
@@ -68,6 +74,8 @@ export default function SubmitReport() {
 
   // ── Form state ────────────────────────────────────────────────────────────
   const [pin,         setPin]         = useState(null);
+  const [streetAddress, setStreetAddress] = useState('');   // reverse-geocoded
+  const [geoLoading,  setGeoLoading]  = useState(false);   // Nominatim in-flight
   const [title,       setTitle]       = useState('');
   const [description, setDescription] = useState('');
   const [category,    setCategory]    = useState('');
@@ -147,7 +155,26 @@ export default function SubmitReport() {
     setPin(pos);
     setDupReport(null);
     setIsDuplicate(false);
+    setStreetAddress('');
 
+    // ── Reverse-geocode via Nominatim (no API key needed) ──
+    setGeoLoading(true);
+    try {
+      const geoRes = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.lat}&lon=${pos.lng}&zoom=18&addressdetails=0`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      if (geoRes.ok) {
+        const geoData = await geoRes.json();
+        setStreetAddress(geoData.display_name ?? '');
+      }
+    } catch {
+      // Silent — address display is non-critical
+    } finally {
+      setGeoLoading(false);
+    }
+
+    // ── FR-09: Duplicate detection ───────────────────────────────
     try {
       const res  = await API.get('/reports/nearby', {
         params: { lat: pos.lat, lng: pos.lng, radius: 30 },
@@ -226,7 +253,7 @@ export default function SubmitReport() {
       );
 
       const score = sevRes.data?.data?.severity ?? sevRes.data?.severity;
-      if (score && score >= 1 && score <= 5) {
+      if (score && score >= 1 && score <= 10) {
         setSeverity(Number(score));
         const cfg = SEVERITY_CONFIG[Number(score)];
         notifications.show({
@@ -266,10 +293,11 @@ export default function SubmitReport() {
       fd.append('latitude',    pin.lat);
       fd.append('longitude',   pin.lng);
       fd.append('isAnonymous', anonymous ? 'true' : 'false');
-      if (category)    fd.append('category',    category);
-      if (file)        fd.append('image',       file);
-      if (isDuplicate) fd.append('isDuplicate', 'true');
-      if (severity)    fd.append('severity',    severity);
+      if (category)       fd.append('category',      category);
+      if (streetAddress)  fd.append('streetAddress', streetAddress);
+      if (file)           fd.append('image',         file);
+      if (isDuplicate)    fd.append('isDuplicate', 'true');
+      if (severity)       fd.append('severity',    severity);
 
       const res    = await API.post('/reports', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       const report = res.data.data?.report ?? res.data.data;
@@ -308,6 +336,13 @@ export default function SubmitReport() {
               <Badge size="xs" color="orange" variant="light" ml="sm">Possible duplicate</Badge>
             )}
           </Text>
+          {/* Street address line */}
+          {geoLoading && (
+            <Text size="xs" c="dimmed" mt={4} style={{ fontStyle: 'italic' }}>📍 Looking up address…</Text>
+          )}
+          {!geoLoading && streetAddress && (
+            <Text size="xs" c="dimmed" mt={4} lineClamp={2}>📍 {streetAddress}</Text>
+          )}
         </Alert>
       )}
 
@@ -466,7 +501,12 @@ export default function SubmitReport() {
 
       <Card p="md" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
         <Stack gap="xs">
-          <ReviewRow label="Location"    value={pin ? `${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}` : '—'} />
+          <ReviewRow label="Location"
+            value={streetAddress
+              ? <Text size="sm" c="white" fw={500} lineClamp={2}>📍 {streetAddress}</Text>
+              : pin ? `${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}` : '—'
+            }
+          />
           <ReviewRow label="Title"       value={title || '—'} />
           <ReviewRow label="Category"    value={category || 'Pending AI'} />
           <ReviewRow label="Anonymous"   value={anonymous ? 'Yes' : 'No'} />
@@ -478,7 +518,7 @@ export default function SubmitReport() {
             value={
               severity
                 ? <Badge size="sm" color={SEVERITY_CONFIG[severity].color} variant="filled" radius="sm">
-                    {SEVERITY_CONFIG[severity].label} ({severity}/5)
+                    {SEVERITY_CONFIG[severity].label} ({severity}/10)
                   </Badge>
                 : 'Not estimated'
             }
@@ -530,16 +570,46 @@ export default function SubmitReport() {
         </Alert>
       )}
 
-      {/* Stepper */}
-      <Stepper active={active} color="civic" mb="xl"
+      {/* Stepper — visually prominent progress indicator */}
+      <Stepper
+        active={active}
+        color="civic"
+        mb="xl"
+        size="sm"
         styles={{
-          stepIcon:  { background: 'rgba(255,255,255,0.05)', border: `1px solid ${BORDER}`, color: '#aaa' },
-          stepLabel: { color: '#777', fontSize: '0.82rem' },
-          separator: { background: BORDER },
+          root:      { background: 'transparent' },
+          stepIcon: {
+            background: 'rgba(255,255,255,0.04)',
+            border: `1px solid ${BORDER}`,
+            color: '#555',
+            fontFamily: "'Space Grotesk', sans-serif",
+          },
+          stepCompletedIcon: { color: GREEN },
+          stepLabel:  { color: '#aaa', fontSize: '0.8rem', fontFamily: "'Space Grotesk', sans-serif" },
+          stepDescription: { color: '#555', fontSize: '0.72rem' },
+          separator: {
+            background: `linear-gradient(to right, ${GREEN}44, ${BORDER})`,
+            height: 1,
+          },
+          // Active step override via data-active
+          step: {
+            '&[data-progress] .mantine-Stepper-stepIcon': {
+              border: `1.5px solid ${GREEN}`,
+              boxShadow: `0 0 12px rgba(0,255,65,0.35)`,
+              color: GREEN,
+            },
+          },
         }}
       >
-        {STEPS.map(label => <Stepper.Step key={label} label={label} />)}
+        {STEPS.map((label, i) => (
+          <Stepper.Step
+            key={label}
+            label={label}
+            description={`Step ${i + 1} of ${STEPS.length}`}
+          />
+        ))}
       </Stepper>
+
 
       {/* Step content */}
       <Card p="xl" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }} mb="lg">

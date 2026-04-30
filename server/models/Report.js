@@ -117,6 +117,12 @@ const reportSchema = new mongoose.Schema(
       max: [180, 'Longitude must be <= 180'],
     },
 
+    // ── Street address (reverse-geocoded on client via Nominatim) ────────────
+    streetAddress: {
+      type: String,
+      trim: true,
+    },
+
     // ── Status Workflow (FR-12) ───────────────────────────────────────────
     status: {
       type: String,
@@ -145,7 +151,7 @@ const reportSchema = new mongoose.Schema(
     severity: {
       type: Number,
       min: 1,
-      max: 5,
+      max: 10,
     },
     isSpam: {
       type: Boolean,
@@ -261,8 +267,9 @@ reportSchema.pre('save', function () {
     : 0;
   const ageBonus = Math.floor(ageHours / 24) * 0.1;
 
-  // Formula caps at 5.0 to align with UI expectations
-  this.priorityScore = Math.min(5, severity + (upvotes * 0.2) + ageBonus);
+  // Formula caps at 10.0 to align with UI expectations
+  // Since severity is 1-10, it forms the base, and upvotes/age can max it out
+  this.priorityScore = Math.min(10, severity + (upvotes * 0.2) + ageBonus);
 });
 
 // ── Plugin: pagination ─────────────────────────────────────────────────────

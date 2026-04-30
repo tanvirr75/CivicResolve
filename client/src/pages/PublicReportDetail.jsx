@@ -248,28 +248,31 @@ export default function PublicReportDetail() {
   };
 
   // ── Share URLs ────────────────────────────────────────────────────────────
-  const currentUrl = encodeURIComponent(window.location.href);
-  const titleEnc = encodeURIComponent(report?.title ?? 'Civic Issue Report');
+  // Use the backend /api/share/:id proxy so crawlers see the OG meta tags.
+  // Real users are JS-redirected back to the React SPA.
+  const apiBase   = import.meta.env.VITE_API_BASE_URL?.replace('/api', '') ?? '';
+  const shareUrl  = encodeURIComponent(`${apiBase}/api/share/${id}`);
+  const titleEnc  = encodeURIComponent(`[${report?.status ?? ''}] ${report?.title ?? 'Civic Issue Report'} | CivicResolve`);
   const sharePanels = [
     {
       platform: 'Facebook',
       icon: IconBrandFacebook,
       color: '#1877F2',
-      url: `https://www.facebook.com/sharer/sharer.php?u=${currentUrl}`,
+      url: `https://www.facebook.com/sharer/sharer.php?u=${shareUrl}`,
       count: report?.shareCounts?.facebook ?? 0,
     },
     {
       platform: 'Twitter',
       icon: IconBrandTwitter,
       color: '#1DA1F2',
-      url: `https://twitter.com/intent/tweet?url=${currentUrl}&text=${titleEnc}`,
+      url: `https://twitter.com/intent/tweet?url=${shareUrl}&text=${titleEnc}`,
       count: report?.shareCounts?.twitter ?? 0,
     },
     {
       platform: 'WhatsApp',
       icon: IconBrandWhatsapp,
       color: '#25D366',
-      url: `https://wa.me/?text=${titleEnc}%20${currentUrl}`,
+      url: `https://wa.me/?text=${titleEnc}%20${shareUrl}`,
       count: report?.shareCounts?.whatsapp ?? 0,
     },
   ];
@@ -562,18 +565,18 @@ export default function PublicReportDetail() {
                   </Text>
                   <Text size="sm" fw={700}
                     c={
-                      (report.priorityScore ?? 0) >= 4 ? '#ef4444'
-                        : (report.priorityScore ?? 0) >= 2 ? '#f59e0b'
+                      (report.priorityScore ?? 0) >= 8 ? '#ef4444'
+                        : (report.priorityScore ?? 0) >= 4 ? '#f59e0b'
                           : '#6b7280'
                     }>
-                    {report.priorityScore ?? 0} / 5
+                    {report.priorityScore ?? 0} / 10
                   </Text>
                 </Group>
                 <Progress
-                  value={((report.priorityScore ?? 0) / 5) * 100}
+                  value={((report.priorityScore ?? 0) / 10) * 100}
                   color={
-                    (report.priorityScore ?? 0) >= 4 ? 'red'
-                      : (report.priorityScore ?? 0) >= 2 ? 'yellow'
+                    (report.priorityScore ?? 0) >= 8 ? 'red'
+                      : (report.priorityScore ?? 0) >= 4 ? 'yellow'
                         : 'gray'
                   }
                   size={8}

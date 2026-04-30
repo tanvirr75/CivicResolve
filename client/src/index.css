@@ -1,3 +1,30 @@
+/* ─── CivicResolve dark-theme CSS custom properties ─────────────────────────
+   Single source of truth for the dark canvas. Mirror values in styles/tokens.js
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --cr-bg:         #0d0d0d;
+  --cr-card-bg:    rgba(255, 255, 255, 0.03);
+  --cr-border:     rgba(255, 255, 255, 0.07);
+  --cr-border-sub: rgba(255, 255, 255, 0.04);
+
+  --cr-green:      #00FF41;
+  --cr-green-dim:  rgba(0, 255, 65, 0.10);
+  --cr-green-bdr:  rgba(0, 255, 65, 0.25);
+  --cr-green-glow: rgba(0, 255, 65, 0.35);
+
+  --cr-text:       #e5e5e5;
+  --cr-text-dim:   #888888;
+  --cr-text-faint: #555555;
+
+  --cr-font-brand: 'Space Grotesk', sans-serif;
+  --cr-font-body:  'Inter', sans-serif;
+
+  --cr-radius:     8px;
+  --cr-radius-lg:  12px;
+
+  --cr-transition: 0.18s ease;
+}
+
 /* Force dark canvas globally — prevents Mantine's white flash on load */
 *,
 *::before,
@@ -10,19 +37,19 @@ body,
 #root {
   margin: 0;
   padding: 0;
-  background: #0d0d0d;
+  background: var(--cr-bg);
   min-height: 100vh;
-  color: #e5e5e5;
+  color: var(--cr-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Leaflet popup reset — keep consistent with dark theme */
+/* Leaflet popup reset */
 .leaflet-popup-content-wrapper {
   background: #1a1a1a !important;
-  border: 1px solid rgba(0, 255, 65, 0.15) !important;
-  border-radius: 8px !important;
-  color: #e5e5e5 !important;
+  border: 1px solid var(--cr-green-dim) !important;
+  border-radius: var(--cr-radius) !important;
+  color: var(--cr-text) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6) !important;
 }
 
@@ -30,12 +57,29 @@ body,
   background: #1a1a1a !important;
 }
 
-/* Fix browser autofill background for dark mode */
+/* Browser autofill dark mode fix */
 input:-webkit-autofill,
-input:-webkit-autofill:hover, 
-input:-webkit-autofill:focus, 
-input:-webkit-autofill:active{
-    -webkit-box-shadow: 0 0 0 30px #0d0d0d inset !important;
-    -webkit-text-fill-color: #e5e5e5 !important;
-    transition: background-color 5000s ease-in-out 0s;
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px var(--cr-bg) inset !important;
+  -webkit-text-fill-color: var(--cr-text) !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Thin scrollbar for dark surfaces */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--cr-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--cr-text-faint); }
+
+/* Focus ring consistent with green accent */
+:focus-visible {
+  outline: 2px solid var(--cr-green);
+  outline-offset: 2px;
+}
+
+/* Page transition wrapper — used by AnimatedLayout in App.jsx */
+.cr-page {
+  will-change: opacity, transform;
 }
