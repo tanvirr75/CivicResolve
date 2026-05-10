@@ -8,7 +8,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   IconArrowLeft, IconDownload, IconUpload, IconCircleCheck,
-  IconAlertCircle, IconX, IconChevronRight,
+  IconAlertCircle, IconX, IconChevronRight, IconMessageCircle,
 } from '@tabler/icons-react';
 import { useMapTheme } from '../../hooks/useMapTheme';
 import MapThemeToggle from '../../components/MapThemeToggle';
@@ -16,6 +16,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import API from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useSocket } from '../../services/socket';
 
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon   from 'leaflet/dist/images/marker-icon.png';
@@ -61,23 +62,36 @@ export default function WorkOrderDetail() {
   const STATUS_STEPS  = ['Pending', 'En Route', 'In Progress', 'Completed'];
   const stepIndex = (s) => STATUS_STEPS.indexOf(s ?? 'Pending');
 
+  const { user } = useAuth();
+
   // ── Fetch work order ──────────────────────────────────────────────────────
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const res = await API.get(`/work-orders/${id}`);
-        const wo  = res.data.data?.workOrder ?? res.data.data;
-        setOrder(wo);
-        if (wo?.status === 'Completed') setUploaded(true);
-        if (wo?.proofUrl) setProofUrl(wo.proofUrl);
-      } catch (err) {
-        if (err.response?.status === 404) setNotFound(true);
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const fetchOrder = useCallback(async () => {
+    try {
+      const res = await API.get(`/work-orders/${id}`);
+      const wo  = res.data.data?.workOrder ?? res.data.data;
+      setOrder(wo);
+      if (wo?.status === 'Completed' || wo?.report?.proofUrl) setUploaded(true);
+      else setUploaded(false);
+      setProofUrl(wo?.report?.proofUrl ?? null);
+    } catch (err) {
+      if (err.response?.status === 404) setNotFound(true);
+    }
   }, [id]);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchOrder().finally(() => setLoading(false));
+  }, [fetchOrder]);
+
+  // ── Refetch when ward official sends feedback via socket ──────────────────
+  useSocket(user?._id, {
+    newNotification: (notif) => {
+      if (notif?.report && order?.report?._id &&
+          notif.report.toString() === order.report._id.toString()) {
+        fetchOrder();
+      }
+    },
+  });
 
   // ── File select handler ───────────────────────────────────────────────────
   const handleFile = (f) => {
@@ -103,12 +117,12 @@ export default function WorkOrderDetail() {
       const url = res.data.data?.proofUrl;
       setProofUrl(url);
       setUploaded(true);
-      setOrder(prev => ({ ...prev, status: 'Completed' }));
+      setOrder(prev => ({ ...prev, report: { ...prev.report, proofUrl: url } }));
       notifications.show({
-        title:   'Proof uploaded ✓',
-        message: 'Work order marked as completed. Report auto-resolved.',
+        title:   'Proof submitted ✓',
+        message: 'Awaiting ward official review. Your work order will be marked Completed once approved.',
         color:   'civic',
-        autoClose: 4000,
+        autoClose: 5000,
       });
     } catch (err) {
       notifications.show({
@@ -315,24 +329,58 @@ export default function WorkOrderDetail() {
             )}
           </Card>
 
+          {/* ── Ward Official Feedback ─────────────────────────────────────── */}
+          {(() => {
+            const feedbacks = (order.report?.comments ?? []).filter(c =>
+              typeof c.content === 'string' && c.content.startsWith('[Ward Official Feedback]')
+            );
+            if (!feedbacks.length) return null;
+            return (
+              <Card p="lg" radius="md" style={{ background: 'rgba(255,160,0,0.06)', border: '1px solid rgba(255,160,0,0.30)' }}>
+                <Group gap={8} mb="md">
+                  <IconMessageCircle size={15} color="#ffa500" />
+                  <Text size="xs" c="orange.4" fw={700} tt="uppercase" style={{ letterSpacing: '0.06em' }}>
+                    Feedback from Ward Official
+                  </Text>
+                </Group>
+                <Stack gap="sm">
+                  {feedbacks.map((c, i) => (
+                    <Box key={i} p="sm" style={{ background: 'rgba(255,160,0,0.08)', borderRadius: 8, border: '1px solid rgba(255,160,0,0.18)' }}>
+                      <Text size="sm" c="#ffd580" lh={1.6}>
+                        {c.content.replace('[Ward Official Feedback]', '').trim()}
+                      </Text>
+                      {c.createdAt && (
+                        <Text size="xs" c="dimmed" mt={4}>
+                          {new Date(c.createdAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+                        </Text>
+                      )}
+                    </Box>
+                  ))}
+                </Stack>
+                <Text size="xs" c="orange.6" mt="sm">
+                  Please address this feedback and re-submit your proof photo below.
+                </Text>
+              </Card>
+            );
+          })()}
+
           <Card p="lg" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
             <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb="md" style={{ letterSpacing: '0.06em' }}>
               Upload Proof of Fix
             </Text>
 
             <Stack gap="md">
-              {/* ── Existing proof (completed order) ── */}
-              {uploaded && proofUrl && (
+              {/* ── Proof submitted, awaiting approval ── */}
+              {uploaded && proofUrl && order.status !== 'Completed' && (
                 <Alert
                   icon={<IconCircleCheck size={15} />}
-                  color="civic" variant="light" radius="md"
-                  style={{ border: `1px solid ${GREEN_BDR}`, background: GREEN_DIM }}
+                  color="yellow" variant="light" radius="md"
                 >
-                  <Text size="xs" c="civic.3" mb={8}>
-                    Proof uploaded — work order <strong>Completed</strong>.
+                  <Text size="xs" fw={600} mb={8}>
+                    Proof submitted — awaiting ward official approval.
                   </Text>
                   <Image src={proofUrl} radius="md" maw={220} mb={6}
-                    style={{ border: `1px solid ${GREEN_BDR}` }} />
+                    style={{ border: `1px solid ${BORDER}` }} />
                   <Anchor href={proofUrl} target="_blank" size="xs" c="civic.4"
                     display="block" underline="always">
                     Open full image →
@@ -340,14 +388,15 @@ export default function WorkOrderDetail() {
                 </Alert>
               )}
 
-              {uploaded && !proofUrl && (
+              {/* ── Approved and completed ── */}
+              {order.status === 'Completed' && (
                 <Alert
                   icon={<IconCircleCheck size={15} />}
                   color="civic" variant="light" radius="md"
                   style={{ border: `1px solid ${GREEN_BDR}`, background: GREEN_DIM }}
                 >
                   <Text size="xs" c="civic.3">
-                    Work order is <strong>Completed</strong>. Proof was submitted.
+                    Work order <strong>Completed</strong>. Ward official approved.
                   </Text>
                 </Alert>
               )}

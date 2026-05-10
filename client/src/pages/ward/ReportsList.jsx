@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Title, Text, Group, Stack, Badge, Card, Table, Anchor,
-  Skeleton, Select, Button, Modal, Pagination, TextInput, ScrollArea,
+  Skeleton, Select, Button, Pagination, TextInput, ScrollArea,
 } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
 import { IconExternalLink, IconUsers, IconCalendar, IconInbox, IconSearch } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import { notifications } from '@mantine/notifications';
 import API from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -49,12 +47,6 @@ export default function ReportsList() {
   const [dateRange, setDateRange] = useState([null, null]);
   const [searchQ, setSearchQ] = useState('');
 
-  // ── Assign modal ──────────────────────────────────────────────────────────
-  const [assignModal, { open: openAssign, close: closeAssign }] = useDisclosure(false);
-  const [targetReport, setTargetReport] = useState(null);   // report being assigned
-  const [workers, setWorkers] = useState([]);
-  const [selWorker, setSelWorker] = useState(null);
-  const [assigning, setAssigning] = useState(false);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchReports = useCallback(async () => {
@@ -81,41 +73,6 @@ export default function ReportsList() {
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
-  // ── Fetch field workers for assign modal ──────────────────────────────────
-  const loadWorkers = useCallback(async () => {
-    try {
-      const res = await API.get('/auth/workers');
-      const list = res.data.data?.workers ?? res.data.data ?? [];
-      setWorkers(list.map(w => ({ value: w._id, label: `${w.name} (${w.employeeId ?? 'FW'})` })));
-    } catch {
-      setWorkers([]);
-    }
-  }, []);
-
-  const openAssignModal = (report) => {
-    setTargetReport(report);
-    setSelWorker(null);
-    loadWorkers();
-    openAssign();
-  };
-
-  // ── Confirm assignment ────────────────────────────────────────────────────
-  const confirmAssign = async () => {
-    if (!selWorker || !targetReport) return;
-    setAssigning(true);
-    try {
-      await API.put(`/reports/${targetReport._id}/status`, { status: 'Assigned', assignedTo: selWorker });
-      notifications.show({ title: 'Worker assigned ✓', message: `Report assigned to field worker.`, color: 'civic', autoClose: 3000 });
-      setReports(prev =>
-        prev.map(r => r._id === targetReport._id ? { ...r, status: 'Assigned' } : r)
-      );
-      closeAssign();
-    } catch (err) {
-      notifications.show({ title: 'Assign failed', message: err.response?.data?.message ?? 'Could not assign.', color: 'red' });
-    } finally {
-      setAssigning(false);
-    }
-  };
 
   // ── Socket.io live badge patch ────────────────────────────────────────────
   useEffect(() => {
@@ -177,11 +134,12 @@ export default function ReportsList() {
         <Table.Td>
           <Group gap={6}>
             <Text size="xs" c="dimmed">{r.assignedTo?.name ?? '—'}</Text>
-            {r.status !== 'Resolved' && (
+            {r.status === 'Open' && (
               <Button
+                component={Link}
+                to={`/ward/reports/${r._id}`}
                 size="xs" radius="md" variant="light" color="civic"
                 leftSection={<IconUsers size={12} />}
-                onClick={() => openAssignModal(r)}
               >
                 Assign
               </Button>
@@ -293,48 +251,6 @@ export default function ReportsList() {
         )}
       </Card>
 
-      {/* ── Assign modal ───────────────────────────────────────────────────── */}
-      <Modal
-        opened={assignModal}
-        onClose={closeAssign}
-        title={
-          <Text fw={700} style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#fff' }}>
-            Assign Field Worker
-          </Text>
-        }
-        centered
-        styles={{
-          content: { background: '#1a1a1a', border: `1px solid ${BORDER}` },
-          header: { background: '#1a1a1a', borderBottom: `1px solid ${BORDER}` },
-          close: { color: '#666' },
-        }}
-      >
-        <Stack gap="md" py="xs">
-          {targetReport && (
-            <Text size="sm" c="dimmed" lineClamp={2}>
-              Assigning to: <span style={{ color: '#fff', fontWeight: 600 }}>{targetReport.title}</span>
-            </Text>
-          )}
-          <Select
-            label="Select field worker"
-            placeholder="Choose a worker..."
-            data={workers}
-            value={selWorker}
-            onChange={setSelWorker}
-            searchable
-            nothingFoundMessage="No workers found"
-            styles={inputSm}
-          />
-          <Group justify="flex-end" mt="xs">
-            <Button variant="subtle" color="gray" size="sm" radius="md" onClick={closeAssign}>Cancel</Button>
-            <Button color="civic" size="sm" radius="md" loading={assigning}
-              disabled={!selWorker} onClick={confirmAssign}
-              style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }}>
-              Confirm Assignment
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </Box>
   );
 }

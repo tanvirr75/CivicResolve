@@ -189,7 +189,7 @@ export default function PublicReportDetail() {
       const data = res.data.data.report;
       setReport(data);
       setUpvoteCnt(data.upvoteCount ?? data.upvotes?.length ?? 0);
-      setComments(data.comments ?? []);
+      setComments((data.comments ?? []).filter(c => !c.content?.startsWith('[Ward Official Feedback]')));
       // Check localStorage for prior upvote
       setUpvoted(localStorage.getItem(upvoteKey(id)) === '1');
     } catch (err) {

@@ -13,7 +13,9 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
  * Credentials (plain-text here; bcrypt pre-save hook hashes automatically):
  *   system_admin  → admin@civic.com    / Admin1234
  *   ward_official → ward@civic.com     / Ward1234   (wardId: W-01)
- *   field_worker  → field@civic.com    / Field1234  (employeeId: EMP-001)
+ *   ward_official → ward2@civic.com    / Ward1234   (wardId: W-02)
+ *   field_worker  → field@civic.com    / Field1234  (wardId: W-01, employeeId: EMP-001)
+ *   field_worker  → field2@civic.com   / Field1234  (wardId: W-02, employeeId: EMP-002)
  *   citizen       → citizen@civic.com  / Citizen1234
  *   citizen2      → citizen2@civic.com / Citizen1234
  */
@@ -46,20 +48,44 @@ const seedUsers = async () => {
         email:        'ward@civic.com',
         passwordHash: 'Ward1234',
         role:         'ward_official',
-        isActive:     true,          // skip pending-approval for dev
-        wardId:       'W-01',        // must match WardBoundary.wardId
+        isActive:     true,
+        wardId:       'W-01',
         jurisdiction: 'Greater Dhaka',
       },
 
-      // ── Field Worker ──────────────────────────────────────────────
+      // ── Ward Official (W-02 — Uttara / North Dhaka) ───────────────
+      {
+        name:         'Ward Official 2',
+        email:        'ward2@civic.com',
+        passwordHash: 'Ward1234',
+        role:         'ward_official',
+        isActive:     true,
+        wardId:       'W-02',
+        jurisdiction: 'Uttara',
+      },
+
+      // ── Field Worker (W-01) ───────────────────────────────────────
       {
         name:         'Field Worker',
         email:        'field@civic.com',
         passwordHash: 'Field1234',
         role:         'field_worker',
-        isActive:     true,          // skip pending-approval for dev
+        isActive:     true,
+        wardId:       'W-01',
         employeeId:   'EMP-001',
         expertise:    'Road Maintenance',
+      },
+
+      // ── Field Worker (W-02) ───────────────────────────────────────
+      {
+        name:         'Field Worker 2',
+        email:        'field2@civic.com',
+        passwordHash: 'Field1234',
+        role:         'field_worker',
+        isActive:     true,
+        wardId:       'W-02',
+        employeeId:   'EMP-002',
+        expertise:    'Drainage & Lighting',
       },
 
       // ── Citizen A ─────────────────────────────────────────────────

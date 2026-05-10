@@ -8,6 +8,7 @@ const { uploadBuffer }     = require('../services/cloudinaryService');
 const { categorizeReport, estimateSeverity, detectSpam, generateWardSummary } = require('../services/aiService');
 const { resolveWard }      = require('../services/wardService');
 const logger               = require('../utils/logger');
+const WorkOrder            = require('../models/WorkOrder');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // @desc    Create a new civic report
@@ -72,7 +73,18 @@ const createReport = async (req, res, next) => {
       }
     }
 
-    // ── 5. Image upload to Cloudinary (FR-02) ────────────────────────────
+    // ── 5. Citizen ward restriction — cannot file reports outside their ward ─
+    if (req.user.role === 'citizen' && req.user.wardId && wardResult) {
+      if (wardResult.wardId !== req.user.wardId) {
+        return res.status(403).json({
+          success: false,
+          message: `You can only report issues in your registered ward (${req.user.wardId}). This location falls in ${wardResult.wardId}.`,
+          data: null,
+        });
+      }
+    }
+
+    // ── 6. Image upload to Cloudinary (FR-02) ────────────────────────────
     let evidences = [];
     if (req.file) {
       const { secure_url, public_id } = await uploadBuffer(
@@ -234,10 +246,10 @@ const getReports = async (req, res, next) => {
     }
 
     // ── Ward scoping (security) ──────────────────────────────────────────
-    // If the caller is a ward_official, always restrict results to their ward.
-    // This prevents officials from reading reports outside their jurisdiction,
-    // even if they manually omit the wardId query param.
-    if (req.user?.role === 'ward_official') {
+    // ward_official, field_worker, and citizen are restricted to their ward.
+    // system_admin sees everything.
+    const scopedRoles = ['ward_official', 'field_worker', 'citizen'];
+    if (scopedRoles.includes(req.user?.role) && req.user.wardId) {
       filter.wardId = req.user.wardId;
     } else if (wardId) {
       filter.wardId = wardId;
@@ -281,6 +293,7 @@ const getReportById = async (req, res, next) => {
     const report = await Report.findById(req.params.id)
       .populate('submittedBy', 'name role')
       .populate('assignedTo',  'name role wardId')
+      .populate('fieldWorker', 'name role employeeId')
       .lean();
 
     if (!report) {
@@ -446,8 +459,8 @@ const getNearbyReports = async (req, res, next) => {
 
 // Valid forward-only status transitions for reports
 const STATUS_TRANSITIONS = {
-  'Open':        ['Assigned', 'Resolved'],
-  'Assigned':    ['In Progress', 'Resolved'],
+  'Open':        ['In Progress', 'Resolved'],
+  'Assigned':    ['In Progress', 'Resolved'],  // kept for backward compat with existing records
   'In Progress': ['Resolved'],
   'Resolved':    [],
 };
@@ -493,6 +506,15 @@ const updateStatus = async (req, res, next) => {
       });
     }
 
+    // Cannot resolve without proof of fix from field worker
+    if (status === 'Resolved' && !report.proofUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot resolve this report. The field worker has not submitted a proof of fix photo yet.',
+        data: null,
+      });
+    }
+
     // Update main status field
     report.status = status;
     if (assignedTo) report.assignedTo = assignedTo;
@@ -505,9 +527,17 @@ const updateStatus = async (req, res, next) => {
       changedAt: new Date(),
     });
 
-    // Handle resolution timestamp logic automatically
     if (status === 'Resolved') {
       report.resolvedAt = new Date();
+      // Mark the associated work order as Completed
+      try {
+        await WorkOrder.findOneAndUpdate(
+          { report: report._id, status: { $ne: 'Completed' } },
+          { status: 'Completed', completedAt: new Date() }
+        );
+      } catch (woErr) {
+        logger.error('[WorkOrder] Failed to complete work order on resolution:', woErr.message);
+      }
     } else {
       report.resolvedAt = undefined;
     }
@@ -868,4 +898,121 @@ const createAnonReport = async (req, res, next) => {
   }
 };
 
-module.exports = { createReport, createAnonReport, getReports, getReportById, toggleUpvote, addComment, getNearbyReports, updateStatus, getMyStats, getAnalytics, getWardPublicStats, getWardAISummary };
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Reject proof of fix — clears proof photo and notifies field worker
+// @route   PUT /api/reports/:id/reject-proof
+// @access  Private (ward_official, system_admin)
+// ─────────────────────────────────────────────────────────────────────────────
+const rejectProof = async (req, res, next) => {
+  try {
+    const { feedback } = req.body;
+
+    if (!feedback?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Feedback message is required.',
+        data: null,
+      });
+    }
+
+    const report = await Report.findById(req.params.id);
+    if (!report) {
+      return res.status(404).json({ success: false, message: 'Report not found.', data: null });
+    }
+
+    if (!report.proofUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'No proof photo to reject.',
+        data: null,
+      });
+    }
+
+    // Clear the proof so field worker must resubmit
+    report.proofUrl       = undefined;
+    report.proofPublicId  = undefined;
+
+    // Post feedback as a visible comment on the report
+    report.comments.push({
+      author     : req.user._id,
+      authorName : req.user.name,
+      content    : `[Ward Official Feedback] ${feedback.trim()}`,
+    });
+
+    await report.save();
+
+    // Reset work order to In Progress — only ward official resolving the report marks it Completed
+    try {
+      await WorkOrder.findOneAndUpdate(
+        { report: report._id, status: 'Completed' },
+        { status: 'In Progress' }
+      );
+    } catch (woErr) {
+      logger.error('[WorkOrder] Failed to reset work order on proof rejection:', woErr.message);
+    }
+
+    // Notify the field worker via Socket.io
+    try {
+      if (report.fieldWorker) {
+        const notifMsg = `Your proof photo for "${report.title}" was rejected. Feedback: ${feedback.trim()}`;
+        const notification = await Notification.create({
+          recipient : report.fieldWorker,
+          report    : report._id,
+          message   : notifMsg,
+          type      : 'status_update',
+        });
+        const io = getIo();
+        io.to(report.fieldWorker.toString()).emit('newNotification', notification);
+      }
+    } catch (notifErr) {
+      logger.error('[Notifications] Failed to notify field worker on proof rejection:', notifErr.message);
+    }
+
+    return res.status(200).json({
+      success : true,
+      message : 'Feedback sent. Field worker must resubmit proof.',
+      data    : { comments: report.comments },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    List all ward boundaries (for registration ward picker)
+// @route   GET /api/reports/wards
+// @access  Public
+// ─────────────────────────────────────────────────────────────────────────────
+const getWards = async (req, res, next) => {
+  try {
+    const wards = await WardBoundary.find({})
+      .select('wardId name')
+      .lean();
+    return res.status(200).json({ success: true, data: { wards } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Resolve which ward a GPS coordinate belongs to
+// @route   GET /api/reports/ward/resolve?lat=&lng=
+// @access  Public
+// ─────────────────────────────────────────────────────────────────────────────
+const resolveWardByCoords = async (req, res, next) => {
+  try {
+    const { lat, lng } = req.query;
+    if (!lat || !lng) {
+      return res.status(400).json({ success: false, message: 'lat and lng are required.', data: null });
+    }
+    const result = await resolveWard(parseFloat(lat), parseFloat(lng));
+    return res.status(200).json({
+      success: true,
+      data: { wardId: result?.wardId ?? null, wardName: result?.wardName ?? null },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { createReport, createAnonReport, getReports, getReportById, toggleUpvote, addComment, getNearbyReports, updateStatus, rejectProof, getMyStats, getAnalytics, getWardPublicStats, getWardAISummary, resolveWardByCoords, getWards };

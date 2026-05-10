@@ -47,14 +47,14 @@ const createWorkOrder = async (req, res, next) => {
       pdfUrl: pdfUrl, // Save Cloudinary URL to database
     });
 
-    // Link the fieldWorker to the Report and update status if it's still Open
+    // Link the fieldWorker to the Report and move status to In Progress
     report.fieldWorker = assignedTo;
     if (report.status === 'Open') {
-      report.status = 'Assigned';
+      report.status = 'In Progress';
       report.statusHistory.push({
-        status: 'Assigned',
+        status: 'In Progress',
         changedBy: req.user._id,
-        note: 'Work Order generated. Dispatched field worker.',
+        note: 'Work Order generated. Field worker dispatched.',
         changedAt: new Date()
       });
     }
@@ -95,30 +95,17 @@ const submitProofOfFix = async (req, res, next) => {
     // Stream image directly to cloudinary
     const { secure_url, public_id } = await uploadBuffer(req.file.buffer, 'civicresolve/proofs');
 
-    // Update Work Order to closed out condition
-    workOrder.status = 'Completed';
-    workOrder.completedAt = new Date();
-    await workOrder.save();
-
-    // Propagate resolution upwards to the original Report
+    // Save proof on the report — work order stays In Progress until ward official approves
     const report = await Report.findById(workOrder.report);
     if (report) {
-      report.status = 'Resolved';
       report.proofUrl = secure_url;
       report.proofPublicId = public_id;
-      report.resolvedAt = new Date();
-      report.statusHistory.push({
-        status: 'Resolved',
-        changedBy: req.user._id,
-        note: 'Issue fixed by field worker. Proof attached.',
-        changedAt: new Date()
-      });
       await report.save();
     }
 
     return res.status(200).json({
       success: true,
-      message: 'Proof of fix submitted. Report officially resolved.',
+      message: 'Proof submitted. Awaiting ward official review.',
       data: {
         workOrderStatus: workOrder.status,
         proofUrl: secure_url,
@@ -214,7 +201,7 @@ const getWorkOrders = async (req, res, next) => {
 const getWorkOrderById = async (req, res, next) => {
   try {
     const workOrder = await WorkOrder.findById(req.params.id)
-      .populate('report',     'title category description latitude longitude location status evidences wardId')
+      .populate('report',     'title category description latitude longitude location status evidences wardId proofUrl comments')
       .populate('assignedTo', 'name email employeeId')
       .populate('assignedBy', 'name email')
       .lean();

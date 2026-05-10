@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, query } = require('express-validator');
-const { createReport, createAnonReport, getReports, getReportById, toggleUpvote, addComment, getNearbyReports, updateStatus, getMyStats, getAnalytics, getWardPublicStats, getWardAISummary } = require('../controllers/reportController');
+const { createReport, createAnonReport, getReports, getReportById, toggleUpvote, addComment, getNearbyReports, updateStatus, rejectProof, getMyStats, getAnalytics, getWardPublicStats, getWardAISummary, resolveWardByCoords, getWards } = require('../controllers/reportController');
 const { authenticate, authorize, optionalAuthenticate } = require('../middleware/authenticate');
 const { uploadSingle }  = require('../middleware/upload');
 
@@ -83,6 +83,12 @@ router.get('/analytics', authenticate, authorize('system_admin'), getAnalytics);
 // GET /api/reports/ward/summary — private, AI daily briefing for ward official
 router.get('/ward/summary', authenticate, authorize('ward_official', 'system_admin'), getWardAISummary);
 
+// GET /api/reports/ward/resolve?lat=&lng= — public, resolve ward from GPS coordinates
+router.get('/ward/resolve', resolveWardByCoords);
+
+// GET /api/reports/wards — public, list all wards for registration picker
+router.get('/wards', getWards);
+
 // GET /api/reports/ward/:wardId/stats — public, per-ward accountability stats
 router.get('/ward/:wardId/stats', getWardPublicStats);
 
@@ -97,5 +103,8 @@ router.post('/:id/comments', authenticate, addComment);
 
 // PUT /api/reports/:id/status — protected, ward officials and admins only
 router.put('/:id/status', authenticate, authorize('ward_official', 'system_admin'), updateStatus);
+
+// PUT /api/reports/:id/reject-proof — ward official sends feedback, clears proof photo
+router.put('/:id/reject-proof', authenticate, authorize('ward_official', 'system_admin'), rejectProof);
 
 module.exports = router;

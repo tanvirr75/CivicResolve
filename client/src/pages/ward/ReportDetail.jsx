@@ -39,7 +39,6 @@ const STATUS_COLOR = {
   Resolved:      'teal',
 };
 
-const VALID_STATUSES = ['Open', 'Assigned', 'In Progress', 'Resolved'];
 
 const inputSm = {
   input:  { background: 'rgba(255,255,255,0.04)', border: `1px solid ${BORDER}`, color: '#e5e5e5', fontFamily: "'Inter', sans-serif" },
@@ -97,10 +96,11 @@ export default function ReportDetail() {
   const [loading,      setLoading]      = useState(true);
   const [notFound,     setNotFound]     = useState(false);
 
-  // Status update
-  const [newStatus,    setNewStatus]    = useState(null);
-  const [statusNote,   setStatusNote]   = useState('');
-  const [statusSaving, setStatusSaving] = useState(false);
+  // Resolve / feedback actions
+  const [statusNote,    setStatusNote]    = useState('');
+  const [statusSaving,  setStatusSaving]  = useState(false);
+  const [feedbackNote,  setFeedbackNote]  = useState('');
+  const [feedbackSaving,setFeedbackSaving]= useState(false);
 
   // Comments
   const [commentText,  setCommentText]  = useState('');
@@ -129,7 +129,6 @@ export default function ReportDetail() {
       const res    = await API.get(`/reports/${id}`);
       const data   = res.data.data.report;
       setReport(data);
-      setNewStatus(data.status);
     } catch (err) {
       if (err.response?.status === 404) setNotFound(true);
     } finally {
@@ -139,19 +138,39 @@ export default function ReportDetail() {
 
   useEffect(() => { fetchReport(); }, [fetchReport]);
 
-  // ── Update status ─────────────────────────────────────────────────────────
-  const handleStatusUpdate = async () => {
-    if (!newStatus || newStatus === report?.status) return;
+  // ── Mark as Resolved (only allowed after field worker submits proof photo) ──
+  const handleMarkResolved = async () => {
     setStatusSaving(true);
     try {
-      const res = await API.put(`/reports/${id}/status`, { status: newStatus, note: statusNote });
-      setReport(prev => ({ ...prev, status: res.data.data.status }));
+      const res = await API.put(`/reports/${id}/status`, { status: 'Resolved', note: statusNote });
+      setReport(prev => ({
+        ...prev,
+        status: res.data.data.status,
+        statusHistory: res.data.data.statusHistory,
+        resolvedAt: res.data.data.resolvedAt,
+      }));
       setStatusNote('');
-      notifications.show({ title: 'Status updated ✓', message: `Report marked as ${newStatus}.`, color: 'civic', autoClose: 3000 });
+      notifications.show({ title: 'Report resolved ✓', message: 'Report has been marked as Resolved.', color: 'teal', autoClose: 3000 });
     } catch (err) {
-      notifications.show({ title: 'Update failed', message: err.response?.data?.message ?? 'Could not update status.', color: 'red' });
+      notifications.show({ title: 'Failed', message: err.response?.data?.message ?? 'Could not resolve report.', color: 'red' });
     } finally {
       setStatusSaving(false);
+    }
+  };
+
+  // ── Send feedback to field worker (rejects proof, worker must resubmit) ──
+  const handleSendFeedback = async () => {
+    if (!feedbackNote.trim()) return;
+    setFeedbackSaving(true);
+    try {
+      const res = await API.put(`/reports/${id}/reject-proof`, { feedback: feedbackNote.trim() });
+      setReport(prev => ({ ...prev, proofUrl: null, proofPublicId: null, comments: res.data.data.comments }));
+      setFeedbackNote('');
+      notifications.show({ title: 'Feedback sent ✓', message: 'Field worker has been notified to resubmit proof.', color: 'orange', autoClose: 4000 });
+    } catch (err) {
+      notifications.show({ title: 'Failed', message: err.response?.data?.message ?? 'Could not send feedback.', color: 'red' });
+    } finally {
+      setFeedbackSaving(false);
     }
   };
 
@@ -183,9 +202,8 @@ export default function ReportDetail() {
       const workOrder = res.data.data?.workOrder;
       const url = workOrder?.pdfUrl ?? res.data.data?.pdfUrl;
       if (url) setWorkOrderUrl(url);
-      // Mark report as assigned locally so the dispatch UI hides
-      setReport(prev => ({ ...prev, status: 'Assigned' }));
-      notifications.show({ title: 'Work order created ✓', message: 'Field worker dispatched. PDF ready for download.', color: 'civic' });
+      setReport(prev => ({ ...prev, status: 'In Progress' }));
+      notifications.show({ title: 'Work order created ✓', message: 'Field worker dispatched. Report is now In Progress.', color: 'civic' });
     } catch (err) {
       notifications.show({ title: 'Work order failed', message: err.response?.data?.message ?? 'Error generating PDF.', color: 'red' });
     } finally {
@@ -234,9 +252,9 @@ export default function ReportDetail() {
           </Group>
         </Box>
 
-        {/* Work order dispatch — only shown when report is still Open */}
+        {/* Work order dispatch — ward_official only, admin sees status badge */}
         <Stack gap="xs" align="flex-end" style={{ minWidth: 240 }}>
-          {report.status === 'Open' ? (
+          {user?.role === 'ward_official' && report.status === 'Open' ? (
             <>
               <Select
                 placeholder="Select field worker…"
@@ -258,16 +276,15 @@ export default function ReportDetail() {
                 onClick={handleWorkOrder}
                 style={{ fontFamily: "'Space Grotesk', sans-serif", width: '100%' }}
               >
-                Generate Work Order PDF
+                Assign Worker
               </Button>
             </>
           ) : (
             <Badge size="sm" color={STATUS_COLOR[report.status] ?? 'gray'} variant="light" radius="sm"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-              {report.status === 'Assigned' ? 'Worker Dispatched' : report.status}
+              {report.status}
             </Badge>
           )}
-          {/* PDF download link — shown after creating a work order this session */}
           {workOrderUrl && (
             <Anchor href={workOrderUrl} target="_blank" size="xs" c="civic.4" underline="always"
               style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -339,18 +356,26 @@ export default function ReportDetail() {
 
           {/* Comment thread */}
           <Card p="lg" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
-            <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb="md" style={{ letterSpacing: '0.06em' }}>
-              Discussion ({report.comments?.length ?? 0})
-            </Text>
-
-            <ScrollArea mah={320} mb="md" type="scroll" offsetScrollbars>
-              <Stack gap="md">
-                {(!report.comments || report.comments.length === 0) && (
-                  <Text size="sm" c="dimmed">No comments yet.</Text>
-                )}
-                {report.comments?.map((c, i) => <CommentBubble key={c._id ?? i} comment={c} />)}
-              </Stack>
-            </ScrollArea>
+            {(() => {
+              const publicComments = (report.comments ?? []).filter(
+                c => !c.content?.startsWith('[Ward Official Feedback]')
+              );
+              return (
+                <>
+                  <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb="md" style={{ letterSpacing: '0.06em' }}>
+                    Discussion ({publicComments.length})
+                  </Text>
+                  <ScrollArea mah={320} mb="md" type="scroll" offsetScrollbars>
+                    <Stack gap="md">
+                      {publicComments.length === 0 && (
+                        <Text size="sm" c="dimmed">No comments yet.</Text>
+                      )}
+                      {publicComments.map((c, i) => <CommentBubble key={c._id ?? i} comment={c} />)}
+                    </Stack>
+                  </ScrollArea>
+                </>
+              );
+            })()}
 
             <Divider color={BORDER} mb="md" />
 
@@ -384,8 +409,8 @@ export default function ReportDetail() {
               Report Info
             </Text>
             <Stack gap={10}>
-              <MetaRow label="Submitted by" value={report.submittedBy?.name ?? 'Anonymous'} />
-              <MetaRow label="Assigned to"  value={report.assignedTo?.name  ?? 'Unassigned'} />
+              <MetaRow label="Submitted by"  value={report.submittedBy?.name  ?? 'Anonymous'} />
+              <MetaRow label="Field Worker"  value={report.fieldWorker?.name  ?? 'Not assigned yet'} />
               <MetaRow label="Ward"         value={report.wardId ?? '—'} />
               <MetaRow label="Submitted"    value={new Date(report.createdAt).toLocaleDateString('en-GB', { dateStyle: 'medium' })} />
               {report.resolvedAt && (
@@ -409,38 +434,114 @@ export default function ReportDetail() {
             </Group>
           </Card>
 
-          {/* Status updater */}
-          <Card p="lg" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
-            <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb="md" style={{ letterSpacing: '0.06em' }}>
-              Update Status
-            </Text>
-            <Select
-              data={VALID_STATUSES}
-              value={newStatus}
-              onChange={setNewStatus}
-              radius="md"
-              mb="sm"
-              styles={inputSm}
-            />
-            <Textarea
-              placeholder="Optional note (e.g. 'Worker dispatched on site')"
-              value={statusNote}
-              onChange={e => setStatusNote(e.currentTarget.value)}
-              minRows={2}
-              mb="sm"
-              styles={inputSm}
-            />
-            <Button
-              fullWidth size="sm" radius="md" color="civic"
-              loading={statusSaving}
-              disabled={newStatus === report.status}
-              onClick={handleStatusUpdate}
-              rightSection={<IconCircleCheck size={14} />}
-              style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }}
-            >
-              Save Status
-            </Button>
-          </Card>
+          {/* ── Contextual action card — ward_official only ────────────── */}
+          {user?.role === 'ward_official' && (
+            <>
+              {/* Open: instruct to use work order dispatch above */}
+              {report.status === 'Open' && (
+                <Card p="lg" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+                  <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb="sm" style={{ letterSpacing: '0.06em' }}>
+                    Next Step
+                  </Text>
+                  <Text size="sm" c="#d1d5db" lh={1.6}>
+                    Use the <strong style={{ color: '#fff' }}>Assign Worker</strong> button at the top to assign a field worker. The report status will automatically move to <strong style={{ color: '#f97316' }}>In Progress</strong>.
+                  </Text>
+                </Card>
+              )}
+
+              {/* In Progress, no proof yet */}
+              {(report.status === 'In Progress' || report.status === 'Assigned') && !report.proofUrl && (
+                <Card p="lg" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+                  <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb="sm" style={{ letterSpacing: '0.06em' }}>
+                    Awaiting Proof of Fix
+                  </Text>
+                  <Text size="sm" c="#d1d5db" lh={1.6}>
+                    The field worker has not yet submitted a proof photo. You will be able to mark this report as <strong style={{ color: '#2dd4bf' }}>Resolved</strong> once they do.
+                  </Text>
+                </Card>
+              )}
+
+              {/* In Progress WITH proof: approve or reject */}
+              {(report.status === 'In Progress' || report.status === 'Assigned') && report.proofUrl && (
+                <Card p="lg" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+                  <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb="md" style={{ letterSpacing: '0.06em' }}>
+                    Proof of Fix Received
+                  </Text>
+                  <Image
+                    src={report.proofUrl}
+                    radius="md"
+                    mb="md"
+                    style={{ border: `1px solid ${BORDER}` }}
+                    alt="Proof of fix"
+                  />
+
+                  {/* ── Approve ── */}
+                  <Text size="xs" c="dimmed" fw={600} mb={4}>Issue is fixed?</Text>
+                  <Textarea
+                    placeholder="Resolution note (optional)"
+                    value={statusNote}
+                    onChange={e => setStatusNote(e.currentTarget.value)}
+                    minRows={2}
+                    mb="sm"
+                    styles={inputSm}
+                  />
+                  <Button
+                    fullWidth size="sm" radius="md" color="teal"
+                    loading={statusSaving}
+                    onClick={handleMarkResolved}
+                    rightSection={<IconCircleCheck size={14} />}
+                    mb="md"
+                    style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }}
+                  >
+                    Mark as Resolved
+                  </Button>
+
+                  {/* ── Divider ── */}
+                  <Divider
+                    label={<Text size="xs" c="dimmed">or</Text>}
+                    labelPosition="center"
+                    color="rgba(255,255,255,0.07)"
+                    mb="md"
+                  />
+
+                  {/* ── Reject / feedback ── */}
+                  <Text size="xs" c="dimmed" fw={600} mb={4}>Issue not fixed? Send feedback.</Text>
+                  <Textarea
+                    placeholder="Describe what still needs to be done…"
+                    value={feedbackNote}
+                    onChange={e => setFeedbackNote(e.currentTarget.value)}
+                    minRows={2}
+                    mb="sm"
+                    styles={inputSm}
+                  />
+                  <Button
+                    fullWidth size="sm" radius="md" color="orange"
+                    loading={feedbackSaving}
+                    disabled={!feedbackNote.trim()}
+                    onClick={handleSendFeedback}
+                    style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }}
+                  >
+                    Send Feedback to Worker
+                  </Button>
+                </Card>
+              )}
+            </>
+          )}
+
+          {/* Admin: show proof photo if it exists (view only) */}
+          {user?.role === 'system_admin' && report.proofUrl && (
+            <Card p="lg" radius="md" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+              <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb="md" style={{ letterSpacing: '0.06em' }}>
+                Proof of Fix
+              </Text>
+              <Image
+                src={report.proofUrl}
+                radius="md"
+                style={{ border: `1px solid ${BORDER}` }}
+                alt="Proof of fix"
+              />
+            </Card>
+          )}
 
           {/* Status history */}
           {report.statusHistory?.length > 0 && (

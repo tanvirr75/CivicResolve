@@ -125,6 +125,10 @@ export default function App() {
           <Route element={<PrivateRoute allowedRole="ward_official" />}>
             <Route path="/ward/dashboard"    element={<WardDashboard />} />
             <Route path="/ward/reports"      element={<WardReportsList />} />
+          </Route>
+
+          {/* ── Ward report detail — ward_official can act, system_admin can view ── */}
+          <Route element={<PrivateRoute allowedRole={['ward_official', 'system_admin']} />}>
             <Route path="/ward/reports/:id"  element={<WardReportDetail />} />
           </Route>
 

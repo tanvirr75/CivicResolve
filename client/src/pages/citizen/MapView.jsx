@@ -8,7 +8,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   IconMapPin, IconFlame, IconFilter, IconArrowUp, IconChevronLeft, IconChevronRight,
-  IconStatusChange, IconCurrentLocation,
+  IconStatusChange, IconCurrentLocation, IconMessage,
 } from '@tabler/icons-react';
 import { motion } from 'framer-motion';
 import { notifications } from '@mantine/notifications';
@@ -17,6 +17,7 @@ import { useAuth } from '../../context/AuthContext';
 import API from '../../services/api';
 import { useMapTheme } from '../../hooks/useMapTheme';
 import MapThemeToggle from '../../components/MapThemeToggle';
+import ReportDetailsDrawer from '../../components/ReportDetailsDrawer';
 
 // ── Leaflet default icons ─────────────────────────────────────────────────────
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -77,7 +78,7 @@ function MapController({ flyToRef }) {
 // ─── MapView ─────────────────────────────────────────────────────────────────
 export default function MapView() {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { theme, toggleTheme, tileUrl, attribution } = useMapTheme();
 
   const [reports,    setReports]    = useState([]);
@@ -93,17 +94,45 @@ export default function MapView() {
   const flyTo = useCallback((lat, lng) => {
     if (flyToRef.current) flyToRef.current(lat, lng);
   }, []);
-  const [upvotedIds, setUpvotedIds] = useState(new Set());
+  const [upvotedIds,    setUpvotedIds]    = useState(new Set());
+  const [drawerReportId, setDrawerReportId] = useState(null);
+  const [drawerOpened,   setDrawerOpened]   = useState(false);
+  const [citizenWardId,  setCitizenWardId]  = useState(null); // resolved from GPS for citizens
+
+  const openDrawer = useCallback((id) => {
+    setDrawerReportId(id);
+    setDrawerOpened(true);
+  }, []);
+
+  // ── Resolve ward for citizens via GPS ─────────────────────────────────────
+  useEffect(() => {
+    if (!user || user.role !== 'citizen') return;
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      try {
+        const res = await API.get('/reports/ward/resolve', {
+          params: { lat: coords.latitude, lng: coords.longitude },
+        });
+        if (res.data.data?.wardId) setCitizenWardId(res.data.data.wardId);
+      } catch { /* non-blocking — citizen sees all if resolution fails */ }
+    });
+  }, [user]);
 
   // ── Fetch reports ─────────────────────────────────────────────────────────
   const fetchReports = useCallback(async () => {
     setLoading(true);
     try {
-      // Default to all active statuses; filter server-side when a specific status is set
       const statusParam = statusFilter ?? 'Open,Assigned,In Progress';
-      const res = await API.get('/reports', {
-        params: { status: statusParam, limit: 200 },
-      });
+      const params = { status: statusParam, limit: 200 };
+
+      // Citizens: filter by their GPS-resolved ward (if available)
+      // ward_official / field_worker: backend auto-scopes via JWT role
+      // system_admin: no filter
+      if (user?.role === 'citizen' && citizenWardId) {
+        params.wardId = citizenWardId;
+      }
+
+      const res = await API.get('/reports', { params });
       const list = res.data.data.reports ?? res.data.data.docs ?? [];
       setReports(list);
     } catch (err) {
@@ -111,7 +140,7 @@ export default function MapView() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, user, citizenWardId]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
@@ -189,31 +218,35 @@ export default function MapView() {
                     {r.title}
                   </Text>
                   <Text size="xs" c="dimmed" mb={8}>{r.status}</Text>
-                  <Tooltip
-                    label="Login or register to upvote"
-                    disabled={isAuthenticated()}
-                    withArrow
-                    position="bottom"
-                    color="dark"
-                  >
-                    <Button
-                      size="xs"
-                      fullWidth
-                      radius="sm"
-                      leftSection={<IconArrowUp size={12} />}
-                      disabled={upvotedIds.has(r._id)}
-                      style={{
-                        background: isAuthenticated() ? GREEN : 'rgba(255,255,255,0.08)',
-                        color: isAuthenticated() ? '#000' : '#888',
-                        fontWeight: 700,
-                        fontSize: '0.78rem',
-                        cursor: isAuthenticated() ? 'pointer' : 'not-allowed',
-                      }}
-                      onClick={() => handleUpvote(r._id)}
+                  <Group gap={6} grow>
+                    <Tooltip
+                      label="Login or register to upvote"
+                      disabled={isAuthenticated()}
+                      withArrow position="bottom" color="dark"
                     >
-                      {!isAuthenticated() ? `🔒 Upvote (${r.upvoteCount ?? 0})` : upvotedIds.has(r._id) ? 'Voted' : `Upvote (${r.upvoteCount ?? 0})`}
+                      <Button
+                        size="xs" radius="sm"
+                        leftSection={<IconArrowUp size={12} />}
+                        disabled={upvotedIds.has(r._id)}
+                        style={{
+                          background: isAuthenticated() ? GREEN : 'rgba(255,255,255,0.08)',
+                          color: isAuthenticated() ? '#000' : '#888',
+                          fontWeight: 700, fontSize: '0.78rem',
+                          cursor: isAuthenticated() ? 'pointer' : 'not-allowed',
+                        }}
+                        onClick={() => handleUpvote(r._id)}
+                      >
+                        {upvotedIds.has(r._id) ? 'Voted' : `Upvote (${r.upvoteCount ?? 0})`}
+                      </Button>
+                    </Tooltip>
+                    <Button
+                      size="xs" radius="sm" variant="light" color="blue"
+                      leftSection={<IconMessage size={12} />}
+                      onClick={() => openDrawer(r._id)}
+                    >
+                      Comment
                     </Button>
-                  </Tooltip>
+                  </Group>
                 </Box>
               </Popup>
             </CircleMarker>
@@ -398,31 +431,38 @@ export default function MapView() {
                           <Text size="xs" fw={600} c="white" lineClamp={1} style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                             {r.title}
                           </Text>
-                          <Group justify="space-between" mt={6} align="center">
-                            <Badge size="xs" variant="dot"
+                          <Group justify="space-between" mt={6} align="center" wrap="nowrap">
+                            <Badge size="xs" variant="dot" style={{ flexShrink: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 90 }}
                               color={r.status === 'Open' ? 'yellow' : r.status === 'Assigned' ? 'blue' : 'orange'}>
                               {r.status}
                             </Badge>
-                            <Tooltip
-                              label="Login or register to upvote"
-                              disabled={isAuthenticated()}
-                              withArrow
-                              position="top"
-                              color="dark"
-                            >
-                              <Button
-                                size="xs"
-                                variant={isAuthenticated() ? 'subtle' : 'default'}
-                                color={isAuthenticated() ? 'civic' : 'gray'}
-                                compact="true"
-                                leftSection={<IconArrowUp size={11} />}
-                                disabled={upvotedIds.has(r._id)}
-                                onClick={() => handleUpvote(r._id)}
-                                style={{ fontSize: '0.72rem', height: 22, padding: '0 8px', opacity: isAuthenticated() ? 1 : 0.5 }}
+                            <Group gap={4} style={{ flexShrink: 0 }}>
+                              <Tooltip
+                                label="Login or register to upvote"
+                                disabled={isAuthenticated()}
+                                withArrow position="top" color="dark"
                               >
-                                {!isAuthenticated() ? '🔒' : upvotedIds.has(r._id) ? 'Voted' : 'Upvote'}
+                                <Button
+                                  size="xs"
+                                  variant={isAuthenticated() ? 'subtle' : 'default'}
+                                  color={isAuthenticated() ? 'civic' : 'gray'}
+                                  leftSection={<IconArrowUp size={11} />}
+                                  disabled={upvotedIds.has(r._id)}
+                                  onClick={e => { e.stopPropagation(); handleUpvote(r._id); }}
+                                  style={{ fontSize: '0.72rem', height: 22, padding: '0 8px', opacity: isAuthenticated() ? 1 : 0.5 }}
+                                >
+                                  {!isAuthenticated() ? '🔒' : upvotedIds.has(r._id) ? 'Voted' : 'Upvote'}
+                                </Button>
+                              </Tooltip>
+                              <Button
+                                size="xs" variant="subtle" color="blue"
+                                leftSection={<IconMessage size={11} />}
+                                onClick={e => { e.stopPropagation(); openDrawer(r._id); }}
+                                style={{ fontSize: '0.72rem', height: 22, padding: '0 8px' }}
+                              >
+                                Comment
                               </Button>
-                            </Tooltip>
+                            </Group>
                           </Group>
                         </Card>
                       </motion.div>
@@ -436,6 +476,13 @@ export default function MapView() {
           </ScrollArea>
         </Stack>
       </motion.div>
+
+      {/* ── Report comment/detail drawer ──────────────────────────────────── */}
+      <ReportDetailsDrawer
+        reportId={drawerReportId}
+        opened={drawerOpened}
+        onClose={() => setDrawerOpened(false)}
+      />
     </Box>
   );
 }

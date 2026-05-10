@@ -15,6 +15,7 @@ import {
   Checkbox,
   Stepper,
   Divider,
+  Select,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import {
@@ -28,6 +29,7 @@ import {
   IconPhone,
   IconCalendar,
   IconDroplet,
+  IconMapPin,
 } from '@tabler/icons-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
@@ -80,9 +82,49 @@ export default function RegisterPage() {
   const navigate             = useNavigate();
   const { login }            = useAuth();
   const { t }                = useTranslation();
-  const [step, setStep]      = useState(0);
-  const [error, setError]    = useState(null);
-  const [loading, setLoading]= useState(false);
+  const [step,         setStep]         = useState(0);
+  const [error,        setError]        = useState(null);
+  const [loading,      setLoading]      = useState(false);
+  const [wards,        setWards]        = useState([]);
+  const [detectingWard,setDetectingWard]= useState(false);
+
+  // Fetch available wards for the picker
+  useState(() => {
+    API.get('/reports/wards')
+      .then(res => setWards(
+        (res.data.data?.wards ?? []).map(w => ({ value: w.wardId, label: `${w.wardId} — ${w.name}` }))
+      ))
+      .catch(() => {});
+  });
+
+  const handleDetectWard = () => {
+    if (!navigator.geolocation) return;
+    setDetectingWard(true);
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          const res = await API.get('/reports/ward/resolve', {
+            params: { lat: coords.latitude, lng: coords.longitude },
+          });
+          const wardId = res.data.data?.wardId;
+          if (wardId) {
+            form.setFieldValue('wardId', wardId);
+            notifications.show({ title: 'Ward detected ✓', message: `Auto-filled: ${wardId}`, color: 'teal', autoClose: 3000 });
+          } else {
+            notifications.show({ title: 'Outside coverage', message: 'Your location is outside any registered ward. Please select manually.', color: 'orange' });
+          }
+        } catch {
+          notifications.show({ title: 'Detection failed', message: 'Could not resolve your ward. Please select manually.', color: 'red' });
+        } finally {
+          setDetectingWard(false);
+        }
+      },
+      () => {
+        notifications.show({ title: 'Location denied', message: 'Enable location access or select your ward manually.', color: 'orange' });
+        setDetectingWard(false);
+      }
+    );
+  };
 
   const form = useForm({
     initialValues: {
@@ -91,6 +133,7 @@ export default function RegisterPage() {
       phone:           '',
       dob:             '',
       bloodGroup:      '',
+      wardId:          '',
       password:        '',
       confirmPassword: '',
       terms:           false,
@@ -98,6 +141,7 @@ export default function RegisterPage() {
     validate: {
       name:  (v) => (v.trim().length >= 2 ? null : 'Full name must be at least 2 characters'),
       email: (v) => (/^\S+@\S+\.\S+$/.test(v.trim()) ? null : 'Enter a valid email address'),
+      wardId: (v) => (v ? null : 'Please select your ward'),
       password: (v) => {
         if (v.length < 8)     return 'Password must be at least 8 characters';
         if (!/[A-Z]/.test(v)) return 'Must contain an uppercase letter';
@@ -151,6 +195,7 @@ export default function RegisterPage() {
         phone:      values.phone.trim(),
         dob:        values.dob,
         bloodGroup: values.bloodGroup.trim(),
+        wardId:     values.wardId,
         password:   values.password,
         role:       'citizen',
       });
@@ -388,8 +433,36 @@ export default function RegisterPage() {
           {/* ── Step 1: optional profile details ──────────────────────── */}
           {step === 1 && (
             <Stack gap="md">
-              <Text size="xs" c="dimmed" mb={4}>
-                These fields are optional — you can fill them in from your profile later.
+              <Box>
+                <Group gap="xs" align="flex-end">
+                  <Select
+                    label={<Text size="sm" fw={500} c="#aaa">Your Ward <span style={{ color: 'red' }}>*</span></Text>}
+                    placeholder="Select your ward"
+                    data={wards}
+                    leftSection={<IconMapPin size={16} color="#666" />}
+                    styles={inputStyles}
+                    style={{ flex: 1 }}
+                    {...form.getInputProps('wardId')}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    color="civic"
+                    radius="md"
+                    loading={detectingWard}
+                    onClick={handleDetectWard}
+                    style={{ whiteSpace: 'nowrap', marginBottom: form.errors.wardId ? 22 : 0 }}
+                  >
+                    {detectingWard ? 'Detecting…' : '📍 Detect'}
+                  </Button>
+                </Group>
+                <Text size="xs" c="dimmed" mt={4}>
+                  Don't know your ward? Click Detect to auto-fill from your location.
+                </Text>
+              </Box>
+
+              <Text size="xs" c="dimmed">
+                Optional details — you can fill these in from your profile later.
               </Text>
 
               <TextInput

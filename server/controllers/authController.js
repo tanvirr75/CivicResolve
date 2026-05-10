@@ -80,6 +80,13 @@ const register = async (req, res, next) => {
     }
 
     // 3. Validate role-specific required fields
+    if ((role === 'citizen' || !role) && !wardId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please select your ward to complete registration.',
+        data: null,
+      });
+    }
     if (role === 'ward_official' && !wardId) {
       return res.status(400).json({
         success: false,
@@ -244,8 +251,15 @@ const logout = async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const getFieldWorkers = async (req, res, next) => {
   try {
-    const workers = await User.find({ role: 'field_worker', isActive: true })
-      .select('_id name email employeeId isActive')
+    const filter = { role: 'field_worker', isActive: true };
+
+    // Ward officials only see workers assigned to their ward
+    if (req.user.role === 'ward_official' && req.user.wardId) {
+      filter.wardId = req.user.wardId;
+    }
+
+    const workers = await User.find(filter)
+      .select('_id name email employeeId wardId isActive')
       .lean();
 
     return res.status(200).json({

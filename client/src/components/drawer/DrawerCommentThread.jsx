@@ -2,16 +2,20 @@ import { Stack, Group, Text, ScrollArea, Avatar, Textarea, ActionIcon } from '@m
 import { IconMessageCircle, IconSend } from '@tabler/icons-react';
 
 export default function DrawerCommentThread({ report, commentText, setCommentText, processing, onPost }) {
+  const publicComments = (report.comments ?? []).filter(
+    c => !c.content?.startsWith('[Ward Official Feedback]')
+  );
+
   return (
     <Stack gap="sm">
       <Group gap="xs">
         <IconMessageCircle size={18} />
-        <Text fw={700}>Community Thread ({report.comments?.length || 0})</Text>
+        <Text fw={700}>Community Thread ({publicComments.length})</Text>
       </Group>
 
       <ScrollArea h={300} type="auto" offsetScrollbars>
         <Stack gap="md" pr="sm">
-          {report.comments?.map(cmd => (
+          {publicComments.map(cmd => (
             <Group key={cmd._id} align="flex-start" wrap="nowrap">
               <Avatar color="blue" radius="xl">{cmd.authorName?.charAt(0) ?? '?'}</Avatar>
               <div>
@@ -23,7 +27,7 @@ export default function DrawerCommentThread({ report, commentText, setCommentTex
               </div>
             </Group>
           ))}
-          {(!report.comments || report.comments.length === 0) && (
+          {publicComments.length === 0 && (
             <Text c="dimmed" size="sm" fs="italic">No comments yet. Be the first to respond.</Text>
           )}
         </Stack>

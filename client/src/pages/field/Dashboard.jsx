@@ -19,9 +19,11 @@ const CARD_BG = 'rgba(255,255,255,0.03)';
 const BORDER = 'rgba(255,255,255,0.07)';
 
 const STATUS_COLOR = {
-  Pending: 'yellow',
-  Completed: 'teal',
-  Cancelled: 'red',
+  Pending:      'yellow',
+  'En Route':   'blue',
+  'In Progress':'orange',
+  Completed:    'teal',
+  Cancelled:    'red',
 };
 
 const CATEGORY_COLOR = {
@@ -127,7 +129,7 @@ export default function FieldDashboard() {
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  const pending = orders.filter(o => o.status === 'Pending');
+  const active    = orders.filter(o => o.status !== 'Completed');
   const completed = orders.filter(o => o.status === 'Completed');
 
   return (
@@ -146,7 +148,7 @@ export default function FieldDashboard() {
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md" mb="xl">
         {[
           { icon: IconBriefcase, label: 'Total Assigned', value: orders.length, accent: '#3b82f6' },
-          { icon: IconClockHour4, label: 'Pending', value: pending.length, accent: '#f59e0b' },
+          { icon: IconClockHour4, label: 'Active', value: active.length, accent: '#f59e0b' },
           { icon: IconCircleCheck, label: 'Completed', value: completed.length, accent: GREEN },
         ].map(s => (
           <Card key={s.label} p="lg" radius="md"
@@ -168,25 +170,25 @@ export default function FieldDashboard() {
         ))}
       </SimpleGrid>
 
-      {/* Pending orders */}
+      {/* Active orders (Pending / En Route / In Progress) */}
       <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb="md" style={{ letterSpacing: '0.06em' }}>
-        Pending Jobs
+        Active Jobs
       </Text>
       {loading ? (
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md" mb="xl">
           {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} height={160} radius="md" />)}
         </SimpleGrid>
-      ) : pending.length === 0 ? (
+      ) : active.length === 0 ? (
         <Card p="xl" radius="md" mb="xl"
           style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
           <Stack align="center" gap="xs">
             <IconInbox size={32} color="#444" />
-            <Text c="dimmed" size="sm">No pending work orders — you're all caught up.</Text>
+            <Text c="dimmed" size="sm">No active work orders — you're all caught up.</Text>
           </Stack>
         </Card>
       ) : (
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md" mb="xl">
-          {pending.map(o => <WorkOrderCard key={o._id} order={o} />)}
+          {active.map(o => <WorkOrderCard key={o._id} order={o} />)}
         </SimpleGrid>
       )}
 
